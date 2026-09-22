@@ -35,7 +35,7 @@ const NETWORK_DEFAULTS = {
   },
   Mainnet: {
     endpoint: { host: 'grpc.mainnet.concordium.software', port: 20000, secure: true },
-    walletProxy: 'https://wallet-proxy.mainnet.concordium.com',
+    walletProxy: 'https://wallet-proxy.mainnet.concordium.software',
   },
 };
 
