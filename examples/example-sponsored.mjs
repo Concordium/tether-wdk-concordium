@@ -19,7 +19,7 @@
  * Run:  npm run example:sponsored
  */
 
-import WalletManagerConcordium, { TransactionRejectedError } from './index.js';
+import WalletManagerConcordium, { TransactionRejectedError } from '../index.js';
 
 const TEST_SEED =
   'abandon abandon abandon abandon abandon abandon ' +

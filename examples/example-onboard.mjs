@@ -18,7 +18,7 @@
  */
 
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
-import WalletManagerConcordium from './index.js';
+import WalletManagerConcordium from '../index.js';
 
 const TEST_SEED =
   'abandon abandon abandon abandon abandon abandon ' +
@@ -85,5 +85,5 @@ const mode = process.argv[2];
 (async () => {
   if (mode === 'request') await doRequest();
   else if (mode === 'create') await doCreate();
-  else { console.log('Usage: node example-onboard.mjs request | create'); }
+  else { console.log('Usage: node examples/example-onboard.mjs request | create'); }
 })().catch((e) => { console.error('Failed:', e); process.exit(1); });

@@ -12,7 +12,7 @@
  *       npm run example
  */
 
-import WalletManagerConcordium, { AccountNotCreatedError } from './index.js';
+import WalletManagerConcordium, { AccountNotCreatedError } from '../index.js';
 
 // The throwaway test seed + the exact identity index used to create the
 // account in Phase 0, so index 0 here maps to that same account.

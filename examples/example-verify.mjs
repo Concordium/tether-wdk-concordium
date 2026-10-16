@@ -7,7 +7,7 @@
  * (it does, from Phase 0). Run:  npm run example:verify
  */
 
-import WalletManagerConcordium from './index.js';
+import WalletManagerConcordium from '../index.js';
 
 const TEST_SEED =
   'abandon abandon abandon abandon abandon abandon ' +

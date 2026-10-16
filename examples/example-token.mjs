@@ -17,7 +17,7 @@
  * Run:  npm run example:token
  */
 
-import WalletManagerConcordium from './index.js';
+import WalletManagerConcordium from '../index.js';
 
 const TEST_SEED =
   'abandon abandon abandon abandon abandon abandon ' +

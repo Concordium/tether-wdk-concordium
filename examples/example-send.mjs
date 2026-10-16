@@ -13,7 +13,7 @@
  *       npm run example:send
  */
 
-import WalletManagerConcordium, { AccountNotCreatedError } from './index.js';
+import WalletManagerConcordium, { AccountNotCreatedError } from '../index.js';
 
 const TEST_SEED =
   'abandon abandon abandon abandon abandon abandon ' +
