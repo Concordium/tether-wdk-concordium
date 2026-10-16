@@ -1,0 +1,75 @@
+name: Publish package
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: npm-publish
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npx --no-install tsc --noEmit types/index.d.ts
+      - name: Verify package identity and version
+        run: |
+          node --input-type=module <<'JS'
+          import assert from 'node:assert/strict';
+          import fs from 'node:fs';
+          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          const lock = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'));
+          assert.equal(pkg.name, '@concordium/wdk-wallet-concordium');
+          assert.equal(lock.packages[''].name, pkg.name);
+          assert.equal(lock.version, pkg.version, 'Refresh the lockfile before publishing');
+          assert.equal(lock.packages[''].version, pkg.version, 'Refresh the lockfile before publishing');
+          if (process.env.GITHUB_REF_TYPE === 'tag') {
+            assert.equal(process.env.GITHUB_REF_NAME, `v${pkg.version}`, 'Tag must exactly match the package version');
+          }
+          console.log(`Validated ${pkg.name}@${pkg.version} for publication under the latest tag`);
+          JS
+      - name: Pack and dry-run the release artifact
+        run: |
+          mkdir -p "$RUNNER_TEMP/release-package"
+          npm pack --pack-destination "$RUNNER_TEMP/release-package"
+          npm publish "$RUNNER_TEMP"/release-package/*.tgz --dry-run --access public
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-package
+          path: ${{ runner.temp }}/release-package/*.tgz
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: prepare
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-package
+          path: release-package
+      - name: Publish prepared artifact using OIDC
+        run: npm publish ./release-package/*.tgz --provenance --access public

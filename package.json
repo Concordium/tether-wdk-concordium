@@ -1,6 +1,6 @@
 {
   "name": "@concordium/wdk-wallet-concordium",
-  "version": "0.1.0-beta.1",
+  "version": "0.1.0",
   "description": "WDK wallet module for the Concordium blockchain: account derivation, native CCD, PLT + CIS-2 tokens, sponsored transactions, and single-identity account recovery.",
   "type": "module",
   "main": "index.js",
@@ -11,7 +11,13 @@
       "default": "./index.js"
     }
   },
-  "files": ["index.js", "src", "types", "README.md", "LICENSE"],
+  "files": [
+    "index.js",
+    "src",
+    "types",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "example": "node examples/example.mjs",
     "example:send": "node examples/example-send.mjs",
@@ -35,7 +41,14 @@
   "devDependencies": {
     "typescript": "5.9.3"
   },
-  "keywords": ["wdk", "wallet", "concordium", "ccd", "multi-chain", "tether"],
+  "keywords": [
+    "wdk",
+    "wallet",
+    "concordium",
+    "ccd",
+    "multi-chain",
+    "tether"
+  ],
   "author": "Concordium",
   "license": "Apache-2.0",
   "dependencies": {
