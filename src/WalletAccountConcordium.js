@@ -1,21 +1,9 @@
 /**
  * WalletAccountConcordium
  * -------------------------------------------------------------------
- * Now built on Tether's base: it EXTENDS `WalletAccountReadOnly` from
- * `@tetherto/wdk-wallet` (which defines the read-only interface) and adds
- * the read-write `IWalletAccount` members. Phase 1 implements the read
- * slice; write/token methods throw NotImplementedError until their phase.
- *
- * Implemented now (Phase 1):
- *   getAddress()            derive the on-chain address
- *   getBalance()            native CCD balance
- *   getBalanceForAddress()  convenience: balance of any known address
- *   path / keyPair         account identity + keys
- *
- * Later:
- *   verify / quoteSendTransaction / quoteTransfer / getTransactionReceipt
- *   sign / signTransaction / sendTransaction / transfer   (Phase 2)
- *   getTokenBalance                                        (Phase 4)
+ * Extends `WalletAccountReadOnly` from `@tetherto/wdk-wallet` with account
+ * keys, message signing, CCD and token transfers, fee quotes, and sponsored
+ * PLT transactions. Account paths identify provider, identity, and credential.
  *
  * Concordium-specific: an address only exists on-chain after identity +
  * credential onboarding, so getBalance throws AccountNotCreatedError for an
@@ -122,13 +110,13 @@ export default class WalletAccountConcordium extends WalletAccountReadOnly {
     }
   }
 
-  /** Read-only view of this account. */
+  /** Returns this same instance; signing capabilities are not removed. */
   async toReadOnlyAccount() { return this; }
 
   /** Erase key references. */
   dispose() { this._disposed = true; this._wallet = null; }
 
-  // ================= Phase 2: sending native CCD =================
+  // ---- native CCD transfers ----
 
   /** Build an AccountSigner for this single-credential, single-key account. */
   _signer() {
@@ -232,9 +220,9 @@ export default class WalletAccountConcordium extends WalletAccountReadOnly {
     return s.verifyMessageSignature(message, JSON.parse(signature), info);
   }
 
-  /** The normalized receipt API introduced by the base package is not supported yet. */
+  /** Normalized receipts are unsupported; use getTransactionReceipt. */
   async getTransaction(_hash) {
-    throw new NotImplementedError('getTransaction is not supported yet. Use getTransactionReceipt.');
+    throw new NotImplementedError('getTransaction is not supported. Use getTransactionReceipt.');
   }
 
   async getTransactionReceipt(hash) {
@@ -245,7 +233,7 @@ export default class WalletAccountConcordium extends WalletAccountReadOnly {
     catch { return null; }
   }
 
-  // ============ Phase 4: tokens (PLT + CIS-2), generic ============
+  // ---- token operations (PLT and CIS-2) ----
   //
   // Token identifier convention (the WDK `tokenAddress` / `token` string):
   //   PLT:    "USDT"  or  "plt:USDT"            (a protocol-level token symbol)
@@ -283,9 +271,8 @@ export default class WalletAccountConcordium extends WalletAccountReadOnly {
   /**
    * Read a CIS-2 token's descriptive metadata (name, symbol, decimals, ...).
    * Per the CIS-2 standard the contract stores only a metadata *URL* on-chain;
-   * the human-readable fields live in the JSON document at that URL. This proves
-   * a token's identity is its (contract, tokenId) ref, not its symbol — two
-   * different tokens may share a name.
+   * the human-readable fields live in the JSON document at that URL. Tokens are
+   * identified by (contract, tokenId), not by their potentially shared name or symbol.
    * @param {string} tokenAddress  a "cis2:<index>:<subindex>:<tokenIdHex>" ref
    * @returns {Promise<{url: string, metadata: object | null}>}
    */
@@ -418,7 +405,7 @@ export default class WalletAccountConcordium extends WalletAccountReadOnly {
     return { fee: BigInt(feeAmount?.microCcdAmount ?? feeAmount?.value ?? feeAmount) };
   }
 
-  // ============ Phase 5: sponsored transactions (extension) ============
+  // ---- sponsored transactions ----
   //
   // Concordium-specific; beyond the standard WDK interface. Lets a token holder
   // spend WITHOUT holding CCD: a separate sponsor account co-signs and pays the

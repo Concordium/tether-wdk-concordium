@@ -1,12 +1,8 @@
 /**
- * Example / smoke test for the Phase 1 read-only module.
+ * Read account addresses and CCD balances on Concordium testnet.
  *
- * Demonstrates two things against Concordium testnet:
- *   1. getBalanceForAddress — read the balance of the real account we
- *      created in Phase 0 (works regardless of address derivation).
- *   2. getAddress + getBalance — derive the address for a WDK index and
- *      read it (this exercises the credId derivation, the one Phase-1
- *      detail still being pinned down; it may need a small tweak).
+ * Retrieves an existing account by its provider/identity/credential path,
+ * then reads its balance both by explicit address and through the account API.
  *
  * Run:  npm install   (once)
  *       npm run example
@@ -14,8 +10,7 @@
 
 import WalletManagerConcordium, { AccountNotCreatedError, CONCORDIUM_TESTNET_CONFIG } from '../index.js';
 
-// The throwaway test seed + the exact identity index used to create the
-// account in Phase 0, so index 0 here maps to that same account.
+// Public test mnemonic for the account at path 0/899424164/0. Never use for real funds.
 const TEST_SEED =
   'abandon abandon abandon abandon abandon abandon ' +
   'abandon abandon abandon abandon abandon about';
@@ -31,8 +26,8 @@ async function main() {
 
   console.log('Account path (provider/identity/cred):', account.path);
 
-  // 1) Definitely-working: read a known account's balance.
-  console.log('\n[1] Reading the known Phase-0 account by address...');
+  // Read a known account's balance by explicit address.
+  console.log('\n[1] Reading the known testnet account by address...');
   try {
     const bal = await account.getBalanceForAddress(KNOWN_ACCOUNT);
     console.log('    ✅ balance (microCCD):', bal.toString(), '  (0 = created but unfunded)');
@@ -40,8 +35,8 @@ async function main() {
     console.log('    ❌', e.message);
   }
 
-  // 2) Exercise address derivation + getBalance via the WDK interface.
-  console.log('\n[2] Deriving the address for index 0 via getAddress()...');
+  // Read the verified account address and balance through the WDK interface.
+  console.log('\n[2] Reading the account address via getAddress()...');
   try {
     const addr = await account.getAddress();
     console.log('    address:', addr);
@@ -50,7 +45,7 @@ async function main() {
     console.log('    ✅ getBalance (microCCD):', bal.toString());
   } catch (e) {
     if (e instanceof AccountNotCreatedError) console.log('    (account not created yet):', e.message);
-    else console.log('    ⚠️  address derivation needs a tweak for this SDK version:\n       ', e.message);
+    else console.log('    ⚠️  Account read failed:\n       ', e.message);
   }
 
   manager.dispose();

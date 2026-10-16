@@ -1,11 +1,8 @@
 /**
  * WalletManagerConcordium
  * -------------------------------------------------------------------
- * The "factory" half of the module. Now built on Tether's base class:
- * it EXTENDS `WalletManager` from `@tetherto/wdk-wallet`, so it inherits
- * seed handling, signer management and account bookkeeping, and provides
- * the Concordium-specific implementations of the abstract methods
- * (getAccount, getAccountByPath, getFeeRates).
+ * Extends `WalletManager` from `@tetherto/wdk-wallet` with Concordium account
+ * lookup and recovery, inheriting seed handling and account bookkeeping.
  *
  * Accounts are selected only by explicit "provider/identity/credentialCounter"
  * paths. Manager configuration does not select an identity.
@@ -99,12 +96,9 @@ export default class WalletManagerConcordium extends WalletManager {
     return this._makeAccount(p, id, cred, info.accountAddress.toString());
   }
 
-  /**
-   * Concordium fees are energy-based (not a simple gas rate), so a meaningful
-   * implementation belongs with the send flow in Phase 2.
-   */
+  /** Unsupported: Concordium fees are energy-based; use transaction-specific quotes. */
   async getFeeRates() {
-    throw new NotImplementedError('getFeeRates: Phase 2 (Concordium uses energy-based fees).');
+    throw new NotImplementedError('getFeeRates is not supported. Concordium uses energy-based fees; use transaction-specific quote methods.');
   }
 
   /**

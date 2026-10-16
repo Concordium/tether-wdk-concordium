@@ -14,7 +14,7 @@ test('getFeeRates throws NotImplementedError (Concordium uses energy-based fees)
   m.dispose();
 });
 
-test('getAccount with a signer name is not supported yet', async () => {
+test('getAccount with a signer name is unsupported', async () => {
   const m = makeManager();
   await assert.rejects(() => m.getAccount('some-signer'), /not supported/i);
   m.dispose();
@@ -22,7 +22,7 @@ test('getAccount with a signer name is not supported yet', async () => {
 
 test('getAccountByPath rejects malformed and non-canonical paths', async () => {
   const m = makeManager();
-  // Things parseInt used to accept but a canonical path must not.
+  // Reject input that parseInt would accept but canonical paths must not.
   for (const bad of ['not/a/path', '1x/0/0', ' 1/0/0', '01/0/0', '1/2', '1/2/3/4', '-1/0/0', '']) {
     await assert.rejects(() => m.getAccountByPath(bad), /Invalid Concordium path/i, `should reject "${bad}"`);
   }

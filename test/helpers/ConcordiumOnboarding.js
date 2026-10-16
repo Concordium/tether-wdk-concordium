@@ -13,11 +13,6 @@
  *   - recovering existing accounts from explicit identity coordinates through
  *     node credential-ID lookup.
  *
- * This class stays because it is genuinely useful for:
- *   - headless automated testing / CI (create real accounts with no ID App UI),
- *   - local development and reproducible testnet setups,
- *   - it was the end-to-end feasibility proof that account creation works.
- *
  * Internal test setup only; instantiate directly with a manager.
  *
  * The flow has an unavoidable interactive step (the user verifies with the
@@ -30,8 +25,6 @@
  *        Polls the provider until the identity is issued.
  *   3. createAccount({ identityObject, identityIndex, ... }) -> { address }
  *        Deploys the credential; the account then exists on-chain.
- *
- * This is a direct port of the flow proven end-to-end in Phase 0.
  */
 
 import * as sdk from '@concordium/web-sdk';

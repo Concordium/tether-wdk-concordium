@@ -48,7 +48,7 @@ test('submitSponsored throws TransactionRejectedError for an unheld token (WRITE
   const a = await m.getAccountByPath(ACCOUNT_PATH);
   // USDT exists on testnet but this account holds none, so the transfer finalizes
   // in a rejected state — submitSponsored must surface that as a throw, not a
-  // normal { hash, fee } result (Concordium review comments 4/5).
+  // normal { hash, fee } result.
   let tx = await a.buildSponsorableTransfer({ token: 'USDT', recipient: KNOWN_ADDRESS, amount: 1n, sponsorAddress: KNOWN_ADDRESS });
   tx = await a.signAsSponsorToBeSigned(tx);
   tx = await a.signAsAccountPreSponsored(tx);

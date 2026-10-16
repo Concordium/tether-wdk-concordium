@@ -47,7 +47,7 @@ test('path retrieval verifies on every call, uses the node address, and caches o
   assert.equal(manager._accounts[second.path], second);
   manager._getGlobal = async () => { throw new Error('Address should already be known'); };
   assert.equal(await second.getAddress(), KNOWN_ADDRESS);
-  // Existing same-path replacement behaviour is unchanged; dispose this reference too.
+  // Only the latest instance is tracked per path; dispose the superseded reference.
   first.dispose();
 });
 

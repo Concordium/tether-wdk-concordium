@@ -1,5 +1,5 @@
 /**
- * Phase 4 example — tokens, generic over PLT and CIS-2.
+ * Read balances, quote fees, and transfer PLT and CIS-2 tokens.
  *
  * The SAME getTokenBalance / quoteTransfer / transfer calls work for both token
  * standards; the identifier string decides which backend runs (see the token

@@ -1,5 +1,5 @@
 /**
- * Phase 5 example — sponsored transactions, all FOUR signing scenarios.
+ * Sponsored PLT transactions with sender-first and sponsor-first signing.
  *
  * A sponsored transaction has two signatures (account + sponsor) and either may
  * sign first. The module exposes all four scenarios, with signing separated

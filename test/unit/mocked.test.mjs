@@ -1,8 +1,7 @@
 /**
  * Unit (mocked) — node-calling methods with an injected FAKE client (offline).
- * This is the Mockito-style tier: it proves getBalanceForAddress's parsing and
- * error-mapping logic without spending a real testnet call. Happy paths are also
- * proven for real by the integration tier.
+ * Verifies getBalanceForAddress balance parsing and error mapping using an
+ * injected fake client, without contacting a testnet node.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

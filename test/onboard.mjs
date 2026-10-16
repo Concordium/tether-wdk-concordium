@@ -67,7 +67,7 @@ async function doCreate() {
   const { address } = await onboarding.createAccount({ identityObject, providerIndex: 0, identityIndex });
   console.log('  🎉 account created:', address);
 
-  // Prove integration: read the new account back through the standard interface.
+  // Read the newly created account through the standard account interface.
   console.log('\nReading the new account through the WDK interface...');
   const account = await manager.getAccountByPath(`0/${identityIndex}/0`);
   const derived = await account.getAddress();

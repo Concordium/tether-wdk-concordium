@@ -1,10 +1,10 @@
 /**
- * Exercises the three not-yet-verified methods:
+ * Quote transfer fees and sign and verify messages:
  *   - quoteSendTransaction  (estimate a transfer fee, no send)
  *   - sign / verify         (sign an arbitrary message, then verify it)
  *
- * None of these spend anything. The account must already exist on-chain
- * (it does, from Phase 0). Run:  npm run example:verify
+ * These operations do not submit transactions. The account must exist on-chain.
+ * Run: npm run example:verify
  */
 
 import WalletManagerConcordium, { CONCORDIUM_TESTNET_CONFIG } from '../index.js';

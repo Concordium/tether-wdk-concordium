@@ -1,9 +1,8 @@
 /**
  * Shared fixtures and helpers for the test suite.
  *
- * The test account, seed, tokens and known address are the same ones used by the
- * example scripts and proven on testnet. Nothing secret lives here beyond the
- * well-known all-"abandon" BIP-39 test seed.
+ * Public unit-test fixtures shared with the example scripts. The mnemonic is
+ * publicly known and must never be used to secure real funds.
  */
 
 import WalletManagerConcordium, { CONCORDIUM_TESTNET_CONFIG } from '../index.js';
@@ -13,7 +12,7 @@ export const TEST_SEED =
   'abandon abandon abandon abandon abandon abandon ' +
   'abandon abandon abandon abandon abandon about';
 
-/** Config for the test account created on testnet in Phase 0. */
+/** Public testnet connectivity configuration. */
 export const CONFIG = {
   ...CONCORDIUM_TESTNET_CONFIG,
 };

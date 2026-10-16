@@ -118,7 +118,7 @@ export class WalletAccountConcordium extends WalletAccountReadOnly implements IW
   /** Read the CCD balance of an explicit Base58 address (any account). */
   getBalanceForAddress(address: string): Promise<bigint>;
   getTransactionReceipt(hash: string): Promise<unknown | null>;
-  /** Normalized receipts are not supported yet; rejects with NotImplementedError. */
+  /** Normalized receipts are unsupported; rejects with NotImplementedError. */
   getTransaction(hash: string): Promise<never>;
   toReadOnlyAccount(): Promise<WalletAccountReadOnly>;
   dispose(): void;

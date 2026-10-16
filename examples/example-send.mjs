@@ -1,8 +1,8 @@
 /**
- * Phase 2 example — send native CCD on testnet.
+ * Send native CCD on testnet.
  *
  * Steps:
- *   1. Load account 0 (the account created in Phase 0).
+ *   1. Retrieve the existing account at path 0/899424164/0.
  *   2. If it has no CCD, request a testnet faucet drop (wallet-proxy) and wait.
  *   3. Send a small amount of CCD to itself (a valid transfer that just pays
  *      the fee) — proves build + sign + send + finalize through the module.
