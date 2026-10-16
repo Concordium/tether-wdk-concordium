@@ -18,7 +18,7 @@
  *   - local development and reproducible testnet setups,
  *   - it was the end-to-end feasibility proof that account creation works.
  *
- * Obtain one via `manager.getOnboarding()`.
+ * Internal test setup only; instantiate directly with a manager.
  *
  * The flow has an unavoidable interactive step (the user verifies with the
  * provider in a browser), so it is split into three calls:
@@ -35,10 +35,10 @@
  */
 
 import * as sdk from '@concordium/web-sdk';
-import { validateIdentityCoordinates } from './identity-coordinates.js';
+import { validateIdentityCoordinates } from '../../src/identity-coordinates.js';
 
 export default class ConcordiumOnboarding {
-  /** @param {import('./WalletManagerConcordium.js').default} manager */
+  /** @param {import('../../src/WalletManagerConcordium.js').default} manager */
   constructor(manager) {
     manager._requireWalletProxy();
     this._m = manager;

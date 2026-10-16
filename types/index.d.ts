@@ -4,7 +4,7 @@
 //
 // Built on the Tether base package: the manager extends WalletManager and the
 // account extends WalletAccountReadOnly / implements IWalletAccount, plus
-// Concordium-specific extras (tokens, sponsored transactions, onboarding).
+// Concordium-specific extras (tokens, sponsored transactions, account recovery).
 
 import WalletManager, {
   WalletAccountReadOnly,
@@ -17,7 +17,7 @@ export interface WalletManagerConcordiumConfig extends WalletConfig {
   useMainnetKeyDerivation: boolean;
   /** Required gRPC HTTP(S) URL. HTTPS enables TLS; default ports are 443/80. No credentials, path, query, or fragment. */
   grpcUrl: string;
-  /** Required only for onboarding and account recovery; may include a base path. */
+  /** Required only for account discovery and recovery; may include a base path. */
   walletProxy?: string;
 }
 
@@ -181,31 +181,6 @@ export class WalletAccountConcordium extends WalletAccountReadOnly implements IW
   submitSponsored(tx: SponsoredTransactionJSON): Promise<TransactionResult>;
 }
 
-/**
- * Dev/testnet headless onboarding utility (identity + credential deployment).
- * NOT the production path — production onboarding uses the Concordium ID App at
- * the host-app layer. Obtain via `manager.getOnboarding()`.
- */
-export class ConcordiumOnboarding {
-  constructor(manager: WalletManagerConcordium);
-  /** Step 1 — build the identity request; open issuanceUrl in a browser. */
-  createIdentityRequest(options: {
-    providerIndex: number;
-    identityIndex: number;
-    arThreshold?: number;
-    redirectUri?: string;
-  }): Promise<{ issuanceUrl: string; identityIndex: number }>;
-  /** Step 2 — after the browser redirect, poll for the issued identity object. */
-  retrieveIdentity(callbackUrl: string): Promise<unknown>;
-  /** Step 3 — deploy the credential; the account now exists on-chain. */
-  createAccount(options: {
-    identityObject: unknown;
-    providerIndex: number;
-    identityIndex: number;
-    credNumber?: number;
-  }): Promise<{ address: string }>;
-}
-
 export default class WalletManagerConcordium extends WalletManager {
   constructor(seed: string | Uint8Array, config: WalletManagerConcordiumConfig);
   /** Unsupported; use getAccountByPath with all three identity coordinates. */
@@ -214,8 +189,6 @@ export default class WalletManagerConcordium extends WalletManager {
   getAccountByPath(path: string): Promise<WalletAccountConcordium>;
   /** Not applicable on Concordium (energy-based fees) — throws. Use the quote methods. */
   getFeeRates(): Promise<never>;
-  /** Dev/testnet onboarding helper (see ConcordiumOnboarding). */
-  getOnboarding(): ConcordiumOnboarding;
   /** List Protocol-Level Token ids available on this network. */
   listTokens(limit?: number): Promise<string[]>;
 

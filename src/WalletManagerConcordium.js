@@ -15,7 +15,6 @@ import WalletManager, { NotImplementedError } from '@tetherto/wdk-wallet';
 import * as sdk from '@concordium/web-sdk';
 import { ConcordiumGRPCNodeClient, credentials } from '@concordium/web-sdk/nodejs';
 import WalletAccountConcordium from './WalletAccountConcordium.js';
-import ConcordiumOnboarding from './ConcordiumOnboarding.js';
 import { parseConfig } from './config.js';
 
 import { validateIdentityCoordinates } from './identity-coordinates.js';
@@ -52,7 +51,7 @@ export default class WalletManagerConcordium extends WalletManager {
 
   _requireWalletProxy() {
     if (!this._ccd.walletProxy) {
-      throw new Error('config.walletProxy is required for account discovery and dev/testnet onboarding.');
+      throw new Error('config.walletProxy is required for account discovery and recovery.');
     }
     return this._ccd.walletProxy;
   }
@@ -98,18 +97,6 @@ export default class WalletManagerConcordium extends WalletManager {
    */
   async getFeeRates() {
     throw new NotImplementedError('getFeeRates: Phase 2 (Concordium uses energy-based fees).');
-  }
-
-  /**
-   * DEV / TESTNET ONLY — headless account creation without the Concordium ID App.
-   * Production onboarding uses the ID App at the host-app layer; WDK's production
-   * role is public-key exposure + account discovery (see ConcordiumOnboarding).
-   * Useful for automated testing, local dev, and reproducible testnet setups.
-   * @returns {ConcordiumOnboarding}
-   */
-  getOnboarding() {
-    this._requireWalletProxy();
-    return new ConcordiumOnboarding(this);
   }
 
   /**

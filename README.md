@@ -93,7 +93,7 @@ Address derivation fetches the network's cryptographic parameters from the node.
 | --- | --- | --- |
 | `useMainnetKeyDerivation` | Yes | Boolean: `true` selects the SDK's Mainnet keys; `false` selects Testnet-compatible keys, including for other chains using that derivation scheme. |
 | `grpcUrl` | Yes | Absolute HTTP(S) URL for the gRPC node. HTTPS enables TLS; HTTP disables it. Ports default to 443/80 when omitted. |
-| `walletProxy` | No | Absolute HTTP(S) wallet-proxy URL, optionally with a base path. Required for discovery, recovery, and dev/testnet onboarding only. |
+| `walletProxy` | No | Absolute HTTP(S) wallet-proxy URL, optionally with a base path. Required for account discovery and recovery only. |
 
 `useMainnetKeyDerivation` controls keys only: it does not choose endpoints or
 verify the chain served by them. The same seed and coordinates produce different
@@ -102,7 +102,7 @@ keys under the two derivation modes. There are no implicit endpoint defaults.
 `grpcUrl` selects a native gRPC connection, not a REST API. It cannot contain
 credentials, query parameters, fragments, or a path other than `/`. Configuration
 is validated locally without connecting to the node. Missing `walletProxy` is
-reported when discovery, recovery, or onboarding is requested; other operations
+reported when discovery or recovery is requested; other operations
 remain available. The old `network` and `endpoint` fields are rejected.
 
 ### Public presets and custom endpoints
@@ -256,28 +256,9 @@ JSON as opaque. Sponsored transfers support PLTs, not CIS-2 tokens.
 ## Account creation
 
 Concordium accounts require an identity and an on-chain credential deployment.
-This module does not provide a production identity-onboarding UI. Integrate
-production onboarding at the host-application layer, then use the account's
-public key and discovery APIs to locate the resulting account.
-
-**`ConcordiumOnboarding` is a dev/testnet-only utility, not a production onboarding
-solution.** It drives a headless identity-provider flow with an interactive
-browser step:
-
-```js
-const onboarding = manager.getOnboarding()
-const providerIndex = 0
-const identityIndex = 0 // Choose the identity coordinates for this request.
-const { issuanceUrl } = await onboarding.createIdentityRequest({ providerIndex, identityIndex })
-// Open issuanceUrl in a browser and obtain callbackUrl from the redirect.
-const identityObject = await onboarding.retrieveIdentity(callbackUrl)
-const { address } = await onboarding.createAccount({ identityObject, providerIndex, identityIndex })
-```
-
-Both calls require explicit non-negative safe integer provider and identity
-indices. `createAccount` defaults its credential counter (`credNumber`) to `0`
-and deploys a credential on-chain. See
-[`examples/example-onboard.mjs`](examples/example-onboard.mjs) for the full workflow.
+This package works with existing accounts; deriving keys does not create an
+account. Integrate production onboarding at the host-application layer, then use
+the account's public key and discovery APIs to locate the resulting account.
 
 ## API and limitations
 
@@ -309,7 +290,6 @@ still incur a fee.
 - Call `dispose()` when finished. Disposal releases key references; it is not a
   guarantee that every JavaScript or WebAssembly memory copy has been erased.
 - Review recipients, token identifiers, amounts, and the selected network before signing.
-- Use the onboarding helper only in development/testnet environments.
 
 ## Examples
 
@@ -322,12 +302,10 @@ npm run example:verify     # Message signing and verification
 npm run example:send       # CCD transfer
 npm run example:token      # Token balances, quotes, and transfers
 npm run example:sponsored  # Sponsored transfers
-npm run onboard:request    # Dev/testnet identity request
-npm run onboard:create     # Dev/testnet credential deployment
 ```
 
-Inspect each script's configuration before running it. Transfer and credential
-deployment examples submit transactions; they are not read-only demonstrations.
+Inspect each script's configuration before running it. Transfer examples submit
+transactions; they are not read-only demonstrations.
 Examples are not included in the npm package.
 
 ## Development and testing

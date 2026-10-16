@@ -2,11 +2,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import WalletManagerConcordium, {
-  ConcordiumOnboarding,
   CONCORDIUM_MAINNET_CONFIG,
   CONCORDIUM_TESTNET_CONFIG,
 } from '../../index.js';
 import * as sdk from '@concordium/web-sdk';
+import ConcordiumOnboarding from '../helpers/ConcordiumOnboarding.js';
 import { TEST_SEED } from '../helpers.mjs';
 
 const custom = { useMainnetKeyDerivation: false, grpcUrl: 'http://localhost:20000' };
@@ -89,7 +89,6 @@ test('wallet-proxy is optional for node-based operations but required for discov
     const key = 'ab'.repeat(32);
     await assert.rejects(() => manager.findAccountByPublicKey(key), /config.walletProxy is required/);
     await assert.rejects(() => manager.recoverAccounts({ providerIndex: 0, identityIndex: 0 }), /config.walletProxy is required/);
-    assert.throws(() => manager.getOnboarding(), /config.walletProxy is required/);
     assert.throws(() => new ConcordiumOnboarding(manager), /config.walletProxy is required/);
   } finally {
     manager.dispose();
@@ -108,7 +107,7 @@ test('wallet-proxy must be an absolute HTTP(S) URL and supports base paths', asy
     manager._fetch = async (url) => { calledUrl = url; return { status: 404 }; };
     await manager.findAccountByPublicKey('ab'.repeat(32));
     assert.equal(calledUrl, `https://proxy.example/base/v0/keyAccounts/${'ab'.repeat(32)}`);
-    assert.ok(manager.getOnboarding() instanceof ConcordiumOnboarding);
+    assert.ok(new ConcordiumOnboarding(manager) instanceof ConcordiumOnboarding);
   } finally {
     manager.dispose();
   }

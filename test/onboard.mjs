@@ -1,15 +1,15 @@
 /**
- * Phase 3 example — create a brand-new Concordium account THROUGH THE MODULE.
+ * Internal testnet setup — create a brand-new Concordium test account.
  *
- * Uses the module's ConcordiumOnboarding extension (manager.getOnboarding()).
+ * Uses the internal ConcordiumOnboarding helper, not the public package API.
  * Two steps with a one-time browser step between them:
  *
- *   npm run onboard:request
+ *   npm run test:onboard:request
  *     -> prints an issuance URL. Open it; the test provider auto-verifies and
  *        redirects to http://localhost:4000/callback#code_uri=...  (that page
  *        fails to load — expected). Paste that full URL into callback.txt.
  *
- *   npm run onboard:create
+ *   npm run test:onboard:create
  *     -> reads callback.txt, retrieves the identity, creates the account, and
  *        then reads the new account's balance back through the WDK interface.
  *
@@ -19,6 +19,7 @@
 
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import WalletManagerConcordium, { CONCORDIUM_TESTNET_CONFIG } from '../index.js';
+import ConcordiumOnboarding from './helpers/ConcordiumOnboarding.js';
 
 const TEST_SEED =
   'abandon abandon abandon abandon abandon abandon ' +
@@ -37,7 +38,7 @@ async function doRequest() {
   writeFileSync(STATE, JSON.stringify({ identityIndex }, null, 2));
 
   const manager = new WalletManagerConcordium(TEST_SEED, baseConfig());
-  const onboarding = manager.getOnboarding();
+  const onboarding = new ConcordiumOnboarding(manager);
 
   const { issuanceUrl } = await onboarding.createIdentityRequest({ providerIndex: 0, identityIndex });
   console.log('Fresh identity index:', identityIndex, '(saved to onboard-state.json)');
@@ -45,18 +46,18 @@ async function doRequest() {
   console.log('   ' + issuanceUrl + '\n');
   console.log('2. It redirects to http://localhost:4000/callback#code_uri=... (page fails to load — fine).');
   console.log('   Paste that full address-bar URL into a file named callback.txt in this folder.');
-  console.log('3. Run:  npm run onboard:create');
+  console.log('3. Run:  npm run test:onboard:create');
   manager.dispose();
 }
 
 async function doCreate() {
-  if (!existsSync(STATE)) throw new Error('Run "npm run onboard:request" first.');
+  if (!existsSync(STATE)) throw new Error('Run "npm run test:onboard:request" first.');
   if (!existsSync(CALLBACK)) throw new Error('Paste the callback URL into callback.txt first.');
   const { identityIndex } = JSON.parse(readFileSync(STATE, 'utf8'));
   const callbackUrl = readFileSync(CALLBACK, 'utf8').trim();
 
   const manager = new WalletManagerConcordium(TEST_SEED, baseConfig());
-  const onboarding = manager.getOnboarding();
+  const onboarding = new ConcordiumOnboarding(manager);
 
   console.log('Retrieving the issued identity (polling the provider)...');
   const identityObject = await onboarding.retrieveIdentity(callbackUrl);
@@ -82,5 +83,5 @@ const mode = process.argv[2];
 (async () => {
   if (mode === 'request') await doRequest();
   else if (mode === 'create') await doCreate();
-  else { console.log('Usage: node examples/example-onboard.mjs request | create'); }
+  else { console.log('Usage: node test/onboard.mjs request | create'); }
 })().catch((e) => { console.error('Failed:', e); process.exit(1); });

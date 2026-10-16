@@ -2,6 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import WalletManagerConcordium from '../../index.js';
+import ConcordiumOnboarding from '../helpers/ConcordiumOnboarding.js';
 import { CONFIG, TEST_SEED, makeManager } from '../helpers.mjs';
 
 test('recovery and onboarding reject missing or invalid coordinates without service calls', async () => {
@@ -13,7 +14,7 @@ test('recovery and onboarding reject missing or invalid coordinates without serv
   };
   manager._getClient = unexpectedService;
   manager._fetch = unexpectedService;
-  const onboarding = manager.getOnboarding();
+  const onboarding = new ConcordiumOnboarding(manager);
   onboarding._ctx = unexpectedService;
   try {
     const invalidOptions = [undefined, {}, { providerIndex: 0 }, { identityIndex: 0 }];
@@ -44,7 +45,7 @@ test('unused identity configuration does not select or override account coordina
     assert.deepEqual(account.keyPair.publicKey, expected.keyPair.publicKey);
     await assert.rejects(() => manager.getAccount(), /getAccountByPath/);
     await assert.rejects(() => manager.recoverAccounts(), /providerIndex is required/);
-    await assert.rejects(() => manager.getOnboarding().createIdentityRequest(), /providerIndex is required/);
+    await assert.rejects(() => new ConcordiumOnboarding(manager).createIdentityRequest(), /providerIndex is required/);
   } finally {
     manager.dispose();
     reference.dispose();

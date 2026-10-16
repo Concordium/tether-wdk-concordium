@@ -3,6 +3,17 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { WalletAccountReadOnly, NotImplementedError } from '@tetherto/wdk-wallet';
 import { makeManager } from '../helpers.mjs';
+import * as publicApi from '../../index.js';
+
+test('onboarding is not part of the public API', () => {
+  assert.equal('ConcordiumOnboarding' in publicApi, false);
+  const manager = makeManager();
+  try {
+    assert.equal('getOnboarding' in manager, false);
+  } finally {
+    manager.dispose();
+  }
+});
 
 test('accounts inherit the read-only base and expose their disposal state', async () => {
   const manager = makeManager();
