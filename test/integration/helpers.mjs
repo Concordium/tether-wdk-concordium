@@ -27,6 +27,5 @@ export const ACCOUNT_PATH = `${IDENTITY_COORDINATES.providerIndex}/${IDENTITY_CO
 export function makeManager() {
   return new WalletManagerConcordium(process.env.TESTNET_SEED, {
     ...UNIT_CONFIG,
-    walletProxy: process.env.WALLET_PROXY || 'https://wallet-proxy.testnet.concordium.com',
   });
 }

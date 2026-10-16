@@ -10,8 +10,8 @@
  * library cannot drive. In production, WDK's onboarding role is limited to:
  *   - exposing the account's public key (WalletAccountConcordium.keyPair /
  *     ConcordiumHdWallet.getAccountPublicKey), and
- *   - discovering the created account from that public key via Concordium's
- *     wallet-proxy recovery endpoint (a small helper to be added in Phase 6).
+ *   - recovering existing accounts from explicit identity coordinates through
+ *     node credential-ID lookup.
  *
  * This class stays because it is genuinely useful for:
  *   - headless automated testing / CI (create real accounts with no ID App UI),
@@ -39,14 +39,14 @@ import { validateIdentityCoordinates } from '../../src/identity-coordinates.js';
 
 export default class ConcordiumOnboarding {
   /** @param {import('../../src/WalletManagerConcordium.js').default} manager */
-  constructor(manager) {
-    manager._requireWalletProxy();
+  constructor(manager, walletProxy = process.env.WALLET_PROXY || 'https://wallet-proxy.testnet.concordium.com') {
     this._m = manager;
+    this._proxy = walletProxy.replace(/\/+$/, '');
   }
 
   get _network() { return this._m._ccd.derivationNetwork; }
   get _seedHex() { return this._m._seedHex; }
-  get _walletProxy() { return this._m._requireWalletProxy(); }
+  get _walletProxy() { return this._proxy; }
 
   async _ctx() {
     return {

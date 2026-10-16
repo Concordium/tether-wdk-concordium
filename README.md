@@ -1,7 +1,7 @@
 # @concordium/wdk-wallet-concordium
 
 A [Tether Wallet Development Kit (WDK)](https://github.com/tetherto/wdk) module for Concordium.
-Derive account keys, read balances, sign messages, transfer CCD and tokens, and discover existing accounts from a seed through the WDK interface.
+Derive account keys, read balances, sign messages, transfer CCD and tokens, and recover existing accounts from a seed through the WDK interface.
 
 > **Beta:** This package is currently in beta.
 > Test thoroughly in development environments before using it in production.
@@ -13,14 +13,13 @@ Derive account keys, read balances, sign messages, transfer CCD and tokens, and 
 - Protocol-level token (PLT) and CIS-2 token balances, transfers, and fee quotes.
 - Sponsored PLT transactions with separate sender and sponsor signing.
 - Message signing and verification.
-- Account discovery through the Concordium wallet-proxy.
+- Account recovery through node credential-ID lookup.
 - TypeScript declarations.
 
 ## Requirements
 
 - **Node.js 18+**, using ES modules. Bare/mobile is not supported.
 - Access to a Concordium gRPC node endpoint.
-  Account discovery also requires a Concordium wallet-proxy endpoint.
 - An existing on-chain account for balance reads and transfers.
   Deriving keys does not create an account; see [Account creation](#account-creation).
 - Sufficient CCD to pay transaction fees, or a funded sponsor for sponsored transfers.
@@ -93,7 +92,6 @@ Address derivation fetches the network's cryptographic parameters from the node.
 | --- | --- | --- |
 | `useMainnetKeyDerivation` | Yes | Boolean: `true` selects the SDK's Mainnet keys; `false` selects Testnet-compatible keys, including for other chains using that derivation scheme. |
 | `grpcUrl` | Yes | Absolute HTTP(S) URL for the gRPC node. HTTPS enables TLS; HTTP disables it. Ports default to 443/80 when omitted. |
-| `walletProxy` | No | Absolute HTTP(S) wallet-proxy URL, optionally with a base path. Required for account discovery and recovery only. |
 
 `useMainnetKeyDerivation` controls keys only: it does not choose endpoints or
 verify the chain served by them. The same seed and coordinates produce different
@@ -101,19 +99,18 @@ keys under the two derivation modes. There are no implicit endpoint defaults.
 
 `grpcUrl` selects a native gRPC connection, not a REST API. It cannot contain
 credentials, query parameters, fragments, or a path other than `/`. Configuration
-is validated locally without connecting to the node. Missing `walletProxy` is
-reported when discovery or recovery is requested; other operations
-remain available. The old `network` and `endpoint` fields are rejected.
+is validated locally without connecting to the node. The old `network` and
+`endpoint` fields are rejected.
 
 ### Public presets and custom endpoints
 
 `CONCORDIUM_MAINNET_CONFIG` and `CONCORDIUM_TESTNET_CONFIG` are exported constants
 containing the derivation flag and public service URLs:
 
-| Preset | `useMainnetKeyDerivation` | `grpcUrl` | `walletProxy` |
-| --- | --- | --- | --- |
-| `CONCORDIUM_MAINNET_CONFIG` | `true` | `https://grpc.mainnet.concordium.software:20000` | `https://wallet-proxy.mainnet.concordium.software` |
-| `CONCORDIUM_TESTNET_CONFIG` | `false` | `https://grpc.testnet.concordium.com:20000` | `https://wallet-proxy.testnet.concordium.com` |
+| Preset | `useMainnetKeyDerivation` | `grpcUrl` |
+| --- | --- | --- |
+| `CONCORDIUM_MAINNET_CONFIG` | `true` | `https://grpc.mainnet.concordium.software:20000` |
+| `CONCORDIUM_TESTNET_CONFIG` | `false` | `https://grpc.testnet.concordium.com:20000` |
 
 Spread a preset to customize it rather than modifying the shared export:
 
@@ -123,12 +120,11 @@ import { CONCORDIUM_TESTNET_CONFIG } from '@concordium/wdk-wallet-concordium'
 const config = {
   ...CONCORDIUM_TESTNET_CONFIG,
   grpcUrl: 'http://localhost:20000',
-  walletProxy: 'https://custom-proxy.example/base',
 }
 ```
 
-For a node-only configuration, provide `useMainnetKeyDerivation` and `grpcUrl`
-directly, without a preset or proxy. For production deployments, choose service
+For a custom configuration, provide `useMainnetKeyDerivation` and `grpcUrl`
+directly, without a preset. For production deployments, choose service
 endpoints appropriate to your availability and privacy requirements.
 
 ### Account paths
@@ -203,30 +199,39 @@ const valid = await account.verify(message, signature)
 Verification reads the account's public keys from the node. Signatures are
 JSON-encoded strings.
 
-### Discover existing accounts
+### Recover accounts for an identity
 
-A derived public key does not by itself identify every on-chain account it
-controls. A Concordium wallet-proxy must be provided for this mapping.
+Recover accounts under a single known identity using only the gRPC node:
 
 ```js
-const matches = await manager.findAccountByPublicKey(account.keyPair.publicKey)
-// [{ address, credentialIndex, keyIndex, isSimpleAccount, publicKey }]
-
-const recovered = await manager.recoverAccounts({
+const accounts = await manager.recoverAccountsForIdentity({
   providerIndex: 0,
   identityIndex: 0,
   startIndex: 0,
   gapLimit: 3,
   maxIndex: 50,
 })
-// [{ index, path, address, publicKey }]
+
+for (const account of accounts) {
+  console.log(account.path, await account.getAddress())
+  console.log(await account.getBalance(), 'microCCD')
+}
 ```
 
-Recovery requires explicit `providerIndex` and `identityIndex` options, both
-non-negative safe integers. It scans credential counters under that identity,
-stopping after `gapLimit` consecutive counters with no matching accounts or at
-`maxIndex`. It does not scan all identities or create accounts. The result's
-`index` is the scanned credential counter; account instances expose only `path`.
+The method requires explicit non-negative safe integer `providerIndex` and
+`identityIndex`. It derives credential registration IDs using the seed and the
+node's cryptographic parameters, then looks up each credential through the node.
+It does not recover identities or create on-chain accounts.
+
+Results are `WalletAccountConcordium` instances with known addresses, tracked for
+manager disposal. Each recovered path has its own instance, even when multiple
+paths refer to the same address. Credential membership does not guarantee that
+one derived key is sufficient to authorize transactions on that account.
+
+Scanning stops after `gapLimit` consecutive missing credentials (default `3`) or
+at the inclusive `maxIndex` (default `50`). Gaps and caps can omit accounts. Only
+an explicit node `NOT_FOUND` response counts as a miss. Other errors reject the
+operation without returning partial results or registering recovered instances.
 
 ### Sponsored PLT transfers
 
@@ -258,7 +263,7 @@ JSON as opaque. Sponsored transfers support PLTs, not CIS-2 tokens.
 Concordium accounts require an identity and an on-chain credential deployment.
 This package works with existing accounts; deriving keys does not create an
 account. Integrate production onboarding at the host-application layer, then use
-the account's public key and discovery APIs to locate the resulting account.
+the account's derivation path and account recovery API to locate the resulting account.
 
 ## API and limitations
 
@@ -329,7 +334,7 @@ Live integration tests require environment-supplied testnet credentials:
 | `TESTNET_IDENTITY_INDEX` | Identity index; defaults to fixture value `899424164`. |
 | `PLT_TOKEN` | Held PLT identifier; defaults to `TN`. |
 | `CIS2_TOKEN` | Held CIS-2 identifier; defaults to `cis2:12754:0:01`. |
-| `WALLET_PROXY` | Optional testnet wallet-proxy override. |
+| `WALLET_PROXY` | Optional endpoint override used only by internal test utilities for transaction-status checks. |
 
 Configure these securely in your shell, then run:
 

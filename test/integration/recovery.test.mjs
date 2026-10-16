@@ -1,31 +1,16 @@
 /**
- * Integration — account recovery against the live testnet wallet-proxy
- * (read-only; no broadcast, nothing spent). Proves the seed can rediscover the
- * known test account purely from its derived public key.
+ * Integration — single-identity credential-based recovery through the node
+ * (read-only; no broadcast).
  * Run with:  npm run test:integration
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { makeManager, ACCOUNT_PATH, IDENTITY_COORDINATES, KNOWN_ADDRESS } from './helpers.mjs';
+import { makeManager, IDENTITY_COORDINATES, KNOWN_ADDRESS } from './helpers.mjs';
 
-test('findAccountByPublicKey rediscovers the known account from account 0\'s public key', async () => {
+test('recoverAccountsForIdentity finds the known account through credential-ID lookup', async () => {
   const m = makeManager();
-  const a = await m.getAccountByPath(ACCOUNT_PATH);
-  const pubHex = Buffer.from(a.keyPair.publicKey).toString('hex');
-
-  const accounts = await m.findAccountByPublicKey(pubHex);
-  const addresses = accounts.map((x) => x.address);
-  assert.ok(
-    addresses.includes(KNOWN_ADDRESS),
-    `expected ${KNOWN_ADDRESS} among ${JSON.stringify(addresses)}`
-  );
-  m.dispose();
-});
-
-test('recoverAccounts finds the known account by scanning from the seed', async () => {
-  const m = makeManager();
-  const found = await m.recoverAccounts({ ...IDENTITY_COORDINATES, gapLimit: 3, maxIndex: 10 });
-  const addresses = found.map((x) => x.address);
+  const found = await m.recoverAccountsForIdentity({ ...IDENTITY_COORDINATES, gapLimit: 3, maxIndex: 10 });
+  const addresses = await Promise.all(found.map((account) => account.getAddress()));
   assert.ok(
     addresses.includes(KNOWN_ADDRESS),
     `expected ${KNOWN_ADDRESS} among recovered ${JSON.stringify(addresses)}`

@@ -6,7 +6,6 @@ import WalletManagerConcordium, {
   CONCORDIUM_TESTNET_CONFIG,
 } from '../../index.js';
 import * as sdk from '@concordium/web-sdk';
-import ConcordiumOnboarding from '../helpers/ConcordiumOnboarding.js';
 import { TEST_SEED } from '../helpers.mjs';
 
 const custom = { useMainnetKeyDerivation: false, grpcUrl: 'http://localhost:20000' };
@@ -52,7 +51,7 @@ test('public presets provide complete connectivity and can be overridden', () =>
     assert.equal(manager._ccd.derivationNetwork, network);
     assert.equal(manager._ccd.grpcEndpoint.port, 20000);
     assert.equal(manager._ccd.grpcEndpoint.secure, true);
-    assert.equal(manager._ccd.walletProxy, preset.walletProxy);
+    assert.equal('walletProxy' in preset, false);
     manager.dispose();
   }
   const manager = new WalletManagerConcordium(TEST_SEED, {
@@ -82,32 +81,12 @@ test('the flag selects SDK-compatible keys without inferring from the endpoint',
   assert.notDeepEqual(keys[0], keys[1]);
 });
 
-test('wallet-proxy is optional for node-based operations but required for discovery and onboarding', async () => {
+test('manager exposes no public-key lookup or proxy accessor', async () => {
   const manager = new WalletManagerConcordium(TEST_SEED, custom);
   try {
     assert.ok(await manager.getAccountByPath('0/0/0'));
-    const key = 'ab'.repeat(32);
-    await assert.rejects(() => manager.findAccountByPublicKey(key), /config.walletProxy is required/);
-    await assert.rejects(() => manager.recoverAccounts({ providerIndex: 0, identityIndex: 0 }), /config.walletProxy is required/);
-    assert.throws(() => new ConcordiumOnboarding(manager), /config.walletProxy is required/);
-  } finally {
-    manager.dispose();
-  }
-});
-
-test('wallet-proxy must be an absolute HTTP(S) URL and supports base paths', async () => {
-  for (const walletProxy of [null, '', 42, 'not-a-url', 'ftp://proxy.example']) {
-    assert.throws(() => new WalletManagerConcordium(TEST_SEED, { ...custom, walletProxy }), /config.walletProxy/);
-  }
-  const manager = new WalletManagerConcordium(TEST_SEED, {
-    ...custom, walletProxy: 'https://proxy.example/base/',
-  });
-  try {
-    let calledUrl;
-    manager._fetch = async (url) => { calledUrl = url; return { status: 404 }; };
-    await manager.findAccountByPublicKey('ab'.repeat(32));
-    assert.equal(calledUrl, `https://proxy.example/base/v0/keyAccounts/${'ab'.repeat(32)}`);
-    assert.ok(new ConcordiumOnboarding(manager) instanceof ConcordiumOnboarding);
+    assert.equal('findAccountByPublicKey' in manager, false);
+    assert.equal('_requireWalletProxy' in manager, false);
   } finally {
     manager.dispose();
   }

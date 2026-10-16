@@ -1,11 +1,11 @@
-/** Recovery and onboarding require explicit identity coordinates before service calls. */
+/** Recovery and internal onboarding require explicit identity coordinates before service calls. */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import WalletManagerConcordium from '../../index.js';
 import ConcordiumOnboarding from '../helpers/ConcordiumOnboarding.js';
 import { CONFIG, TEST_SEED, makeManager } from '../helpers.mjs';
 
-test('recovery and onboarding reject missing or invalid coordinates without service calls', async () => {
+test('recovery and internal onboarding reject missing or invalid coordinates without service calls', async () => {
   const manager = makeManager();
   let serviceCalls = 0;
   const unexpectedService = async () => {
@@ -13,7 +13,6 @@ test('recovery and onboarding reject missing or invalid coordinates without serv
     throw new Error('Unexpected service call');
   };
   manager._getClient = unexpectedService;
-  manager._fetch = unexpectedService;
   const onboarding = new ConcordiumOnboarding(manager);
   onboarding._ctx = unexpectedService;
   try {
@@ -23,7 +22,7 @@ test('recovery and onboarding reject missing or invalid coordinates without serv
       invalidOptions.push({ providerIndex: 0, identityIndex: value });
     }
     for (const options of invalidOptions) {
-      await assert.rejects(() => manager.recoverAccounts(options), /required.*non-negative safe integer/);
+      await assert.rejects(() => manager.recoverAccountsForIdentity(options), /required.*non-negative safe integer/);
       await assert.rejects(() => onboarding.createIdentityRequest(options), /required.*non-negative safe integer/);
       await assert.rejects(() => onboarding.createAccount(options), /required.*non-negative safe integer/);
     }
@@ -44,7 +43,7 @@ test('unused identity configuration does not select or override account coordina
     assert.equal(account.path, '1/2/3');
     assert.deepEqual(account.keyPair.publicKey, expected.keyPair.publicKey);
     await assert.rejects(() => manager.getAccount(), /getAccountByPath/);
-    await assert.rejects(() => manager.recoverAccounts(), /providerIndex is required/);
+    await assert.rejects(() => manager.recoverAccountsForIdentity(), /providerIndex is required/);
     await assert.rejects(() => new ConcordiumOnboarding(manager).createIdentityRequest(), /providerIndex is required/);
   } finally {
     manager.dispose();

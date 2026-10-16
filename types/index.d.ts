@@ -17,39 +17,20 @@ export interface WalletManagerConcordiumConfig extends WalletConfig {
   useMainnetKeyDerivation: boolean;
   /** Required gRPC HTTP(S) URL. HTTPS enables TLS; default ports are 443/80. No credentials, path, query, or fragment. */
   grpcUrl: string;
-  /** Required only for account discovery and recovery; may include a base path. */
-  walletProxy?: string;
 }
 
 /** Public endpoint presets; spread to customize. */
 export const CONCORDIUM_MAINNET_CONFIG: {
   useMainnetKeyDerivation: boolean;
   grpcUrl: string;
-  walletProxy: string;
 };
 export const CONCORDIUM_TESTNET_CONFIG: {
   useMainnetKeyDerivation: boolean;
   grpcUrl: string;
-  walletProxy: string;
 };
 
-/** One account returned by the wallet-proxy /v0/keyAccounts lookup. */
-export interface KeyAccount {
-  address: string;
-  credentialIndex: number;
-  keyIndex: number;
-  isSimpleAccount: boolean;
-  publicKey: { schemeId: string; verifyKey: string };
-}
-
-/** Options for {@link WalletManagerConcordium.findAccountByPublicKey}. */
-export interface FindAccountByPublicKeyOptions {
-  /** Only return simple (single-credential, single-key) accounts. Default false. */
-  onlySimple?: boolean;
-}
-
-/** Options for {@link WalletManagerConcordium.recoverAccounts}. */
-export interface RecoverAccountsOptions {
+/** Options for recovering accounts under a single identity. */
+export interface RecoverAccountsForIdentityOptions {
   providerIndex: number;
   identityIndex: number;
   /** First credential counter to try. Default 0. */
@@ -58,15 +39,6 @@ export interface RecoverAccountsOptions {
   gapLimit?: number;
   /** Hard cap on how far to scan. Default 50. */
   maxIndex?: number;
-  onlySimple?: boolean;
-}
-
-/** A recovered account: its derived index/path and the on-chain address. */
-export interface RecoveredAccount {
-  index: number;
-  path: string;
-  address: string;
-  publicKey: string;
 }
 
 /** A native CCD transfer request. */
@@ -192,20 +164,13 @@ export default class WalletManagerConcordium extends WalletManager {
   /** List Protocol-Level Token ids available on this network. */
   listTokens(limit?: number): Promise<string[]>;
 
-  // ---- account recovery (Phase 6) ----
+  // ---- account recovery ----
   /**
-   * Look up the on-chain accounts controlled by a signing-key public key, via
-   * the wallet-proxy /v0/keyAccounts endpoint. Empty array = no such account.
+   * Recover accounts for one explicit identity through node credential-ID lookup.
+   * Returns one instance per path after the scan succeeds. NOT_FOUND counts as a
+   * miss; other lookup errors reject recovery.
    */
-  findAccountByPublicKey(
-    publicKey: string | Uint8Array,
-    options?: FindAccountByPublicKeyOptions,
-  ): Promise<KeyAccount[]>;
-  /**
-   * Recover accounts from the seed by scanning credential counters and looking
-   * up each derived public key. Stops after `gapLimit` consecutive empty indexes.
-   */
-  recoverAccounts(options: RecoverAccountsOptions): Promise<RecoveredAccount[]>;
+  recoverAccountsForIdentity(options: RecoverAccountsForIdentityOptions): Promise<WalletAccountConcordium[]>;
 
   dispose(): void;
 }

@@ -2,13 +2,11 @@
 export const CONCORDIUM_MAINNET_CONFIG = {
   useMainnetKeyDerivation: true,
   grpcUrl: 'https://grpc.mainnet.concordium.software:20000',
-  walletProxy: 'https://wallet-proxy.mainnet.concordium.software',
 };
 
 export const CONCORDIUM_TESTNET_CONFIG = {
   useMainnetKeyDerivation: false,
   grpcUrl: 'https://grpc.testnet.concordium.com:20000',
-  walletProxy: 'https://wallet-proxy.testnet.concordium.com',
 };
 
 function parseHttpUrl(value, field) {
@@ -43,12 +41,8 @@ export function parseConfig(config) {
   if (port < 1 || port > 65535) {
     throw new Error('config.grpcUrl port must be between 1 and 65535.');
   }
-  const walletProxy = config.walletProxy === undefined
-    ? undefined
-    : parseHttpUrl(config.walletProxy, 'walletProxy').toString().replace(/\/+$/, '');
   return {
     ...config,
-    walletProxy,
     // The SDK uses network-specific derivation even for custom chains.
     derivationNetwork: config.useMainnetKeyDerivation ? 'Mainnet' : 'Testnet',
     grpcEndpoint: { host: grpc.hostname, port, secure },
