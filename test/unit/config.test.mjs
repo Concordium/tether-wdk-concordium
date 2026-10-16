@@ -6,7 +6,7 @@ import WalletManagerConcordium, {
   CONCORDIUM_TESTNET_CONFIG,
 } from '../../index.js';
 import * as sdk from '@concordium/web-sdk';
-import { TEST_SEED } from '../helpers.mjs';
+import { TEST_SEED, makeManager } from '../helpers.mjs';
 
 const custom = { useMainnetKeyDerivation: false, grpcUrl: 'http://localhost:20000' };
 
@@ -65,7 +65,7 @@ test('public presets provide complete connectivity and can be overridden', () =>
 test('the flag selects SDK-compatible keys without inferring from the endpoint', async () => {
   const keys = [];
   for (const useMainnetKeyDerivation of [false, true]) {
-    const manager = new WalletManagerConcordium(TEST_SEED, { ...custom, useMainnetKeyDerivation });
+    const manager = makeManager({ ...custom, useMainnetKeyDerivation });
     try {
       const account = await manager.getAccountByPath('0/0/0');
       const expected = sdk.ConcordiumHdWallet.fromHex(
@@ -82,7 +82,7 @@ test('the flag selects SDK-compatible keys without inferring from the endpoint',
 });
 
 test('manager exposes no public-key lookup or proxy accessor', async () => {
-  const manager = new WalletManagerConcordium(TEST_SEED, custom);
+  const manager = makeManager(custom);
   try {
     assert.ok(await manager.getAccountByPath('0/0/0'));
     assert.equal('findAccountByPublicKey' in manager, false);

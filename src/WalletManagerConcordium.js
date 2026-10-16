@@ -14,7 +14,7 @@
 import WalletManager, { NotImplementedError } from '@tetherto/wdk-wallet';
 import * as sdk from '@concordium/web-sdk';
 import { ConcordiumGRPCNodeClient, credentials } from '@concordium/web-sdk/nodejs';
-import WalletAccountConcordium from './WalletAccountConcordium.js';
+import WalletAccountConcordium, { AccountNotCreatedError } from './WalletAccountConcordium.js';
 import { parseConfig } from './config.js';
 
 import { validateIdentityCoordinates } from './identity-coordinates.js';
@@ -54,13 +54,31 @@ export default class WalletManagerConcordium extends WalletManager {
     return this._global;
   }
 
+  /** Derive a credential ID and look it up at the node's default finalized block. */
+  async _lookupAccountInfo(providerIndex, identityIndex, credNumber) {
+    const global = await this._getGlobal();
+    const onChainCommitmentKey = global?.onChainCommitmentKey ?? global?.value?.onChainCommitmentKey;
+    const wallet = sdk.ConcordiumHdWallet.fromHex(this._seedHex, this._ccd.derivationNetwork);
+    const credentialId = sdk.CredentialRegistrationId.fromHexString(
+      wallet.getCredentialId(providerIndex, identityIndex, credNumber, { onChainCommitmentKey }).toString('hex')
+    );
+    const client = await this._getClient();
+    try {
+      return await client.getAccountInfo(credentialId);
+    } catch (error) {
+      if (sdk.isRpcError(error) && error.code === 'NOT_FOUND') return undefined;
+      throw error;
+    }
+  }
+
   /** Unsupported: all identity coordinates must be supplied through a path. */
   async getAccount(_index, _options) {
     throw new NotImplementedError('getAccount is not supported. Use getAccountByPath("provider/identity/credentialCounter").');
   }
 
   /**
-   * Get an account by explicit Concordium path "provider/identity/cred".
+   * Get an existing account by explicit Concordium path "provider/identity/cred".
+   * Performs a fresh credential-ID lookup before creating or registering it.
    * (Concordium's key space is a 3-tuple, so we use this form rather than a
    * BIP-44 string.)
    */
@@ -76,7 +94,9 @@ export default class WalletManagerConcordium extends WalletManager {
     if (![p, id, cred].every(Number.isSafeInteger)) {
       throw new Error(`Concordium path "${path}" exceeds the supported integer range.`);
     }
-    return this._makeAccount(p, id, cred);
+    const info = await this._lookupAccountInfo(p, id, cred);
+    if (!info) throw new AccountNotCreatedError(undefined, { path: value });
+    return this._makeAccount(p, id, cred, info.accountAddress.toString());
   }
 
   /**
@@ -123,25 +143,13 @@ export default class WalletManagerConcordium extends WalletManager {
     maxIndex = 50,
   } = {}) {
     validateIdentityCoordinates(providerIndex, identityIndex);
-    const client = await this._getClient();
-    const global = await this._getGlobal();
-    const onChainCommitmentKey = global?.onChainCommitmentKey ?? global?.value?.onChainCommitmentKey;
-    const wallet = sdk.ConcordiumHdWallet.fromHex(this._seedHex, this._ccd.derivationNetwork);
     const found = [];
     let gap = 0;
     for (let i = startIndex; i <= maxIndex && gap < gapLimit; i++) {
-      const credentialId = sdk.CredentialRegistrationId.fromHexString(
-        wallet.getCredentialId(providerIndex, identityIndex, i, { onChainCommitmentKey }).toString('hex')
-      );
-      let info;
-      try {
-        info = await client.getAccountInfo(credentialId);
-      } catch (error) {
-        if (sdk.isRpcError(error) && error.code === 'NOT_FOUND') {
-          gap++;
-          continue;
-        }
-        throw error;
+      const info = await this._lookupAccountInfo(providerIndex, identityIndex, i);
+      if (!info) {
+        gap++;
+        continue;
       }
       found.push({ credNumber: i, address: info.accountAddress.toString() });
       gap = 0;

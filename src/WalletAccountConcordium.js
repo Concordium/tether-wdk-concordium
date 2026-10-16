@@ -27,11 +27,13 @@ import * as sdk from '@concordium/web-sdk';
 import * as plt from '@concordium/web-sdk/plt';
 
 export class AccountNotCreatedError extends Error {
-  constructor(address) {
-    super(`Concordium account ${address ?? '(derived)'} does not exist on-chain yet. ` +
+  constructor(address, { path } = {}) {
+    const account = path === undefined ? (address ?? '(derived)') : `at path "${path}"`;
+    super(`Concordium account ${account} does not exist on-chain yet. ` +
           `It must be created via identity + credential onboarding first.`);
     this.name = 'AccountNotCreatedError';
     this.address = address;
+    this.path = path;
   }
 }
 

@@ -1,6 +1,6 @@
 {
   "name": "@concordium/wdk-wallet-concordium",
-  "version": "1.0.0-beta.1",
+  "version": "0.1.0-beta.1",
   "description": "WDK wallet module for the Concordium blockchain: account derivation, native CCD, PLT + CIS-2 tokens, sponsored transactions, and single-identity account recovery.",
   "type": "module",
   "main": "index.js",

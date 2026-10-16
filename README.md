@@ -20,7 +20,7 @@ Derive account keys, read balances, sign messages, transfer CCD and tokens, and 
 
 - **Node.js 18+**, using ES modules. Bare/mobile is not supported.
 - Access to a Concordium gRPC node endpoint.
-- An existing on-chain account for balance reads and transfers.
+- An existing on-chain account to retrieve an account by path, read balances, or transfer funds.
   Deriving keys does not create an account; see [Account creation](#account-creation).
 - Sufficient CCD to pay transaction fees, or a funded sponsor for sponsored transfers.
 
@@ -84,7 +84,9 @@ try {
 
 The constructor accepts a BIP-39 mnemonic or raw seed bytes (`Uint8Array`).
 The seed, key-derivation mode, identity-provider index, identity index, and credential counter must match the account you intend to access.
-Address derivation fetches the network's cryptographic parameters from the node.
+Account retrieval fetches the network's cryptographic parameters and verifies
+the derived credential through the node. The public demonstration seed/path may
+not have an on-chain account; in that case, `getAccountByPath` rejects.
 
 ## Configuration
 
@@ -139,6 +141,15 @@ Use `manager.getAccountByPath('0/0/3')` or `wdk.getAccountByPath('concordium', '
 Replace the example path with the coordinates associated with your account.
 
 Paths must contain three non-negative safe integers, without leading zeros.
+Each `getAccountByPath` call performs a fresh credential-ID lookup at the node's
+default last-finalized block. It returns an account only if the credential exists,
+using the address returned by the node. Chain cryptographic parameters are cached;
+account-info lookups are not. Connectivity is required; there is no offline bypass.
+
+A missing credential raises `AccountNotCreatedError` with `error.path` set and
+`error.address` undefined. Connection failures and other node errors propagate
+unchanged. No account instance is registered on failure. Credential membership
+does not prove that a single derived key satisfies the account's signing threshold.
 
 ## Usage
 
@@ -281,8 +292,9 @@ See [`types/index.d.ts`](types/index.d.ts) for request, result, and option types
 | `getTransaction()` / `waitForTransaction()` | Unsupported; use `getTransactionReceipt()`. |
 | `toReadOnlyAccount()` | Returns the same account instance, **not** a signing-isolated view. |
 
-`getBalance()` throws `AccountNotCreatedError` when the derived account is not
-on-chain, rather than returning zero. Submission methods throw
+`getAccountByPath()` throws `AccountNotCreatedError` when the credential is not
+on-chain. Address-based balance reads also use this error for a missing account,
+with `error.address` set. Submission methods throw
 `TransactionRejectedError` when a transaction finalizes with a rejected outcome;
 its `hash` and `rejectReason` identify the failure. A rejected transaction can
 still incur a fee.

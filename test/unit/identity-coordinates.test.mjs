@@ -1,9 +1,8 @@
 /** Recovery and internal onboarding require explicit identity coordinates before service calls. */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import WalletManagerConcordium from '../../index.js';
 import ConcordiumOnboarding from '../helpers/ConcordiumOnboarding.js';
-import { CONFIG, TEST_SEED, makeManager } from '../helpers.mjs';
+import { CONFIG, makeManager } from '../helpers.mjs';
 
 test('recovery and internal onboarding reject missing or invalid coordinates without service calls', async () => {
   const manager = makeManager();
@@ -13,6 +12,7 @@ test('recovery and internal onboarding reject missing or invalid coordinates wit
     throw new Error('Unexpected service call');
   };
   manager._getClient = unexpectedService;
+  manager._lookupAccountInfo = unexpectedService;
   const onboarding = new ConcordiumOnboarding(manager);
   onboarding._ctx = unexpectedService;
   try {
@@ -33,7 +33,7 @@ test('recovery and internal onboarding reject missing or invalid coordinates wit
 });
 
 test('unused identity configuration does not select or override account coordinates', async () => {
-  const manager = new WalletManagerConcordium(TEST_SEED, {
+  const manager = makeManager({
     ...CONFIG, identityProviderIndex: 123, identityIndex: 456,
   });
   const reference = makeManager();

@@ -90,7 +90,7 @@ for (const error of [
 ]) {
   test(`recovery propagates ${error.code || error.message} without partial account registration`, async (t) => {
     const { manager } = setup(t, (counter) => {
-      if (counter === 0) return accountInfo();
+      if (counter === 0 || counter === 9) return accountInfo();
       throw error;
     });
     const existing = await manager.getAccountByPath('2/7/9');

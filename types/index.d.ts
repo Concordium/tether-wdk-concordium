@@ -90,7 +90,10 @@ export interface BuildSponsorableTransferOptions {
 }
 
 export class AccountNotCreatedError extends Error {
+  constructor(address?: string, options?: { path?: string });
   address?: string;
+  /** Present when an explicit derivation path has no on-chain account. */
+  path?: string;
 }
 
 /**
@@ -158,6 +161,7 @@ export default class WalletManagerConcordium extends WalletManager {
   /** Unsupported; use getAccountByPath with all three identity coordinates. */
   getAccount(index?: number, options?: { signerName?: string }): Promise<never>;
   getAccount(signerName: string): Promise<never>;
+  /** Verifies the credential through a fresh node lookup; rejects with AccountNotCreatedError on NOT_FOUND. */
   getAccountByPath(path: string): Promise<WalletAccountConcordium>;
   /** Not applicable on Concordium (energy-based fees) — throws. Use the quote methods. */
   getFeeRates(): Promise<never>;

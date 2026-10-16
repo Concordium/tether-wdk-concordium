@@ -34,9 +34,11 @@ export const WALLET_PROXY =
 /** True when write (money-moving) tests should run. */
 export const RUN_WRITE = !!process.env.WRITE;
 
-/** Fresh manager for a test. Remember to dispose() it. */
+/** Offline unit-test manager: credential lookup is stubbed. Remember to dispose() it. */
 export function makeManager(config = CONFIG) {
-  return new WalletManagerConcordium(TEST_SEED, config);
+  const manager = new WalletManagerConcordium(TEST_SEED, config);
+  manager._lookupAccountInfo = async () => ({ accountAddress: KNOWN_ADDRESS });
+  return manager;
 }
 
 /** Query the real on-chain outcome of a submitted transaction (for write tests). */
