@@ -5,7 +5,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { makeManager, KNOWN_ADDRESS, PLT_TOKEN, RUN_WRITE, submissionStatus } from '../helpers.mjs';
+import { makeManager, KNOWN_ADDRESS, PLT_TOKEN, RUN_WRITE, submissionStatus } from './helpers.mjs';
 import { TransactionRejectedError } from '../../index.js';
 
 const sponsorable = (a) => a.buildSponsorableTransfer({

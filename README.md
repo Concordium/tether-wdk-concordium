@@ -12,6 +12,8 @@ modules and is driven through the same WDK interface.
 
 ## Install
 
+Requires **Node.js 18+ only**. Bare/mobile support is planned and is not part of this release.
+
 ```bash
 npm install @concordium/wdk-wallet-concordium
 ```
@@ -56,6 +58,15 @@ npm test                            # unit: offline, fast, no network
 npm run test:integration            # integration: reads/quotes against testnet
 WRITE=1 npm run test:integration    # also runs real transfers (spends testnet fees)
 ```
+
+Unit tests use a public test mnemonic and do not require credentials or external services.
+Never use that mnemonic for real funds.
+
+Integration tests require `TESTNET_SEED` and `TESTNET_ADDRESS` in the environment,
+with `TESTNET_PROVIDER_INDEX`, `TESTNET_IDENTITY_INDEX`, `PLT_TOKEN`, and
+`CIS2_TOKEN` set to match the funded testnet account as needed. No seed values
+should be committed or printed. Write tests require explicit approval before
+setting `WRITE=1`; they spend testnet funds. Integration tests are not run in CI.
 
 (Windows PowerShell: `$env:WRITE="1"; npm run test:integration`.)
 
@@ -135,7 +146,7 @@ onboarding. So `getBalance()` throws `AccountNotCreatedError` (rather than
 returning a misleading `0`) when the account isn't on-chain yet. Use
 `getBalanceForAddress(addr)` to read any known address directly.
 
-**Runtime.** Targets Node.js (per the agreed v1 scope). The SDK's WebAssembly
+**Runtime.** Targets Node.js 18+ only (per the agreed v1 scope); Bare/mobile support is planned. The SDK's WebAssembly
 crypto is confirmed working under Node in Phase 0.
 
 ## Config
@@ -149,7 +160,7 @@ mainnet endpoint and wallet-proxy automatically. Every field stays overridable.
 | `endpoint.host` | `grpc.testnet.concordium.com` | `grpc.mainnet.concordium.software` | Concordium gRPC node host |
 | `endpoint.port` | `20000` | `20000` | node port |
 | `endpoint.secure` | `true` | `true` | TLS — the public nodes require it |
-| `walletProxy` | `https://wallet-proxy.testnet.concordium.com` | `https://wallet-proxy.mainnet.concordium.com` | wallet-proxy base URL (onboarding + recovery) |
+| `walletProxy` | `https://wallet-proxy.testnet.concordium.com` | `https://wallet-proxy.mainnet.concordium.software` | wallet-proxy base URL (onboarding + recovery) |
 | `identityProviderIndex` | `0` | `0` | provider that WDK indices live under |
 | `identityIndex` | `0` | `0` | identity that WDK indices live under |
 
@@ -172,6 +183,7 @@ verified on testnet.
 | `quoteSendTransaction` (fee estimate) | ✅ matches actual |
 | `sign` / `verify` (messages) | ✅ |
 | `getTransactionReceipt` | ✅ |
+| `getTransaction` / inherited `waitForTransaction` | not supported yet; use `getTransactionReceipt` |
 | `getTokenBalance` / `transfer` / `quoteTransfer` (PLT **and** CIS-2) | ✅ |
 | `getFeeRates` | throws — Concordium prices by energy; use the quote methods |
 | `manager.findAccountByPublicKey(key)` / `manager.recoverAccounts()` | ✅ seed-based recovery (see below) |

@@ -6,7 +6,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { makeManager, KNOWN_ADDRESS } from '../helpers.mjs';
+import { makeManager, KNOWN_ADDRESS } from './helpers.mjs';
 
 test('findAccountByPublicKey rediscovers the known account from account 0\'s public key', async () => {
   const m = makeManager();

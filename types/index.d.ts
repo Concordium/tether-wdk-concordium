@@ -1,3 +1,5 @@
+/// <reference lib="es2022.error" />
+
 // Type definitions for @concordium/wdk-wallet-concordium
 //
 // Built on the Tether base package: the manager extends WalletManager and the
@@ -128,6 +130,7 @@ export class TransactionRejectedError extends Error {
 }
 
 export class WalletAccountConcordium extends WalletAccountReadOnly implements IWalletAccount {
+  get disposed(): boolean;
   get index(): number;
   get path(): string;
   get keyPair(): { publicKey: Uint8Array; privateKey: Uint8Array | null };
@@ -138,6 +141,8 @@ export class WalletAccountConcordium extends WalletAccountReadOnly implements IW
   /** Read the CCD balance of an explicit Base58 address (any account). */
   getBalanceForAddress(address: string): Promise<bigint>;
   getTransactionReceipt(hash: string): Promise<unknown | null>;
+  /** Normalized receipts are not supported yet; rejects with NotImplementedError. */
+  getTransaction(hash: string): Promise<never>;
   toReadOnlyAccount(): Promise<WalletAccountReadOnly>;
   dispose(): void;
 
@@ -191,7 +196,9 @@ export class ConcordiumOnboarding {
 
 export default class WalletManagerConcordium extends WalletManager {
   constructor(seed: string | Uint8Array, config?: WalletManagerConcordiumConfig);
-  getAccount(index?: number): Promise<WalletAccountConcordium>;
+  getAccount(index?: number, options?: { signerName?: string }): Promise<WalletAccountConcordium>;
+  /** Named signers are not supported yet; rejects with NotImplementedError. */
+  getAccount(signerName: string): Promise<WalletAccountConcordium>;
   getAccountByPath(path: string): Promise<WalletAccountConcordium>;
   /** Not applicable on Concordium (energy-based fees) — throws. Use the quote methods. */
   getFeeRates(): Promise<never>;

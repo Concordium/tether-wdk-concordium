@@ -1,18 +1,3 @@
-# Whitelist approach: ignore everything at the repo root by default, then
-# explicitly allow only the folders/files that belong in the shared repo.
-# This keeps internal docs out WITHOUT naming them here (so the .gitignore
-# itself reveals nothing about local-only files).
-
-/*
-
-# Things that SHOULD be tracked:
-!/.gitignore
-!/README.md
-!/LICENSE
-!/phase0-spike/
-!/wdk-wallet-concordium/
-
-# Within the tracked folders, still ignore dependencies and local run artifacts:
 node_modules/
 *.log
 .DS_Store
@@ -20,4 +5,16 @@ callback.txt
 onboard-state.json
 identity-object.json
 identity-request.json
-package-lock.json
+
+.bash_profile
+.bashrc
+.claude/
+.gitconfig
+.gitmodules
+.idea
+.mcp.json
+.profile
+.ripgreprc
+.vscode
+.zprofile
+.zshrc

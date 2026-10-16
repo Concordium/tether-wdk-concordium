@@ -20,9 +20,20 @@
     "onboard:create": "node example-onboard.mjs create",
     "example:token": "node example-token.mjs",
     "example:sponsored": "node example-sponsored.mjs",
-    "test": "node --test \"test/unit/*.test.mjs\"",
-    "test:integration": "node --test \"test/integration/*.test.mjs\"",
-    "test:all": "node --test \"test/unit/*.test.mjs\" \"test/integration/*.test.mjs\""
+    "test": "node --test test/unit/*.test.mjs",
+    "test:integration": "node --test test/integration/*.test.mjs",
+    "test:all": "node --test test/unit/*.test.mjs test/integration/*.test.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Concordium/tether-wdk-concordium.git"
+  },
+  "homepage": "https://github.com/Concordium/tether-wdk-concordium#readme",
+  "bugs": {
+    "url": "https://github.com/Concordium/tether-wdk-concordium/issues"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3"
   },
   "keywords": ["wdk", "wallet", "concordium", "ccd", "multi-chain", "tether"],
   "author": "Concordium",

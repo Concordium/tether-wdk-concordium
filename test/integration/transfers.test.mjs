@@ -6,7 +6,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { makeManager, KNOWN_ADDRESS, PLT_TOKEN, CIS2_TOKEN, RUN_WRITE } from '../helpers.mjs';
+import { makeManager, KNOWN_ADDRESS, PLT_TOKEN, CIS2_TOKEN, RUN_WRITE } from './helpers.mjs';
 
 test('native CCD transfer to self returns a hash and fee (WRITE=1)', { skip: !RUN_WRITE }, async () => {
   const m = makeManager();

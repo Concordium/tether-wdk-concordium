@@ -3,7 +3,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { makeManager, KNOWN_ADDRESS, PLT_TOKEN, CIS2_TOKEN } from '../helpers.mjs';
+import { makeManager, KNOWN_ADDRESS, PLT_TOKEN, CIS2_TOKEN } from './helpers.mjs';
 
 test('quoteSendTransaction returns a positive CCD fee', async () => {
   const m = makeManager();

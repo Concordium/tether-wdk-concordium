@@ -22,7 +22,7 @@
  * account that hasn't been created yet (rather than a misleading 0).
  */
 
-import WalletAccountReadOnly, { NotImplementedError } from '@tetherto/wdk-wallet';
+import { WalletAccountReadOnly, NotImplementedError } from '@tetherto/wdk-wallet';
 import * as sdk from '@concordium/web-sdk';
 import * as plt from '@concordium/web-sdk/plt';
 
@@ -70,6 +70,9 @@ export default class WalletAccountConcordium extends WalletAccountReadOnly {
   }
 
   // ---- IWalletAccount identity ----
+
+  /** Whether this account has been disposed. */
+  get disposed() { return this._disposed === true; }
 
   /** WDK account index (the credential counter). */
   get index() { return this._credNumber; }
@@ -228,6 +231,11 @@ export default class WalletAccountConcordium extends WalletAccountReadOnly {
     const sender = s.AccountAddress.fromBase58(await this.getAddress());
     const info = await (await this._getClient()).getAccountInfo(sender);
     return s.verifyMessageSignature(message, JSON.parse(signature), info);
+  }
+
+  /** The normalized receipt API introduced by the base package is not supported yet. */
+  async getTransaction(_hash) {
+    throw new NotImplementedError('getTransaction is not supported yet. Use getTransactionReceipt.');
   }
 
   async getTransactionReceipt(hash) {

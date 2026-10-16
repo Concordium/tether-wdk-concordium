@@ -4,7 +4,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { makeManager, KNOWN_ADDRESS, PLT_TOKEN, CIS2_TOKEN } from '../helpers.mjs';
+import { makeManager, KNOWN_ADDRESS, PLT_TOKEN, CIS2_TOKEN } from './helpers.mjs';
 
 test('getAddress derives the known testnet address', async () => {
   const m = makeManager();
