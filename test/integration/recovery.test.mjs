@@ -6,11 +6,11 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { makeManager, KNOWN_ADDRESS } from './helpers.mjs';
+import { makeManager, ACCOUNT_PATH, IDENTITY_COORDINATES, KNOWN_ADDRESS } from './helpers.mjs';
 
 test('findAccountByPublicKey rediscovers the known account from account 0\'s public key', async () => {
   const m = makeManager();
-  const a = await m.getAccount(0);
+  const a = await m.getAccountByPath(ACCOUNT_PATH);
   const pubHex = Buffer.from(a.keyPair.publicKey).toString('hex');
 
   const accounts = await m.findAccountByPublicKey(pubHex);
@@ -24,7 +24,7 @@ test('findAccountByPublicKey rediscovers the known account from account 0\'s pub
 
 test('recoverAccounts finds the known account by scanning from the seed', async () => {
   const m = makeManager();
-  const found = await m.recoverAccounts({ gapLimit: 3, maxIndex: 10 });
+  const found = await m.recoverAccounts({ ...IDENTITY_COORDINATES, gapLimit: 3, maxIndex: 10 });
   const addresses = found.map((x) => x.address);
   assert.ok(
     addresses.includes(KNOWN_ADDRESS),

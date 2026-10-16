@@ -17,17 +17,14 @@
  * Run:  npm run example:token
  */
 
-import WalletManagerConcordium from '../index.js';
+import WalletManagerConcordium, { CONCORDIUM_TESTNET_CONFIG } from '../index.js';
 
 const TEST_SEED =
   'abandon abandon abandon abandon abandon abandon ' +
   'abandon abandon abandon abandon abandon about';
 
 const config = {
-  network: 'Testnet',
-  endpoint: { host: 'grpc.testnet.concordium.com', port: 20000, secure: true },
-  identityProviderIndex: 0,
-  identityIndex: 899424164,
+  ...CONCORDIUM_TESTNET_CONFIG,
 };
 
 const PLT_TOKEN = process.env.PLT_TOKEN || 'TN';
@@ -47,7 +44,7 @@ async function showBalance(account, token, label = token) {
 
 async function main() {
   const manager = new WalletManagerConcordium(TEST_SEED, config);
-  const account = await manager.getAccount(0);
+  const account = await manager.getAccountByPath('0/899424164/0');
   const address = await account.getAddress();
   console.log('Account:', address);
 

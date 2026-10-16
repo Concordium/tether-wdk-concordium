@@ -44,14 +44,14 @@ test('AccountNotCreatedError carries the address and a clear message', () => {
 
 test('getCis2Metadata rejects a non-CIS-2 (PLT) ref', async () => {
   const m = makeManager();
-  const a = await m.getAccount(0);
+  const a = await m.getAccountByPath('0/899424164/0');
   await assert.rejects(() => a.getCis2Metadata('USDT'), /NotImplemented|CIS-2/i);
   m.dispose();
 });
 
 test('buildSponsorableTransfer rejects a CIS-2 token (sponsored is PLT-only)', async () => {
   const m = makeManager();
-  const a = await m.getAccount(0);
+  const a = await m.getAccountByPath('0/899424164/0');
   await assert.rejects(
     () => a.buildSponsorableTransfer({ token: 'cis2:1:0:01', recipient: '3X', amount: 1n, sponsorAddress: '3Y' }),
     /NotImplemented|PLT/i

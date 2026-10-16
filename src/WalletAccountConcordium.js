@@ -10,7 +10,7 @@
  *   getAddress()            derive the on-chain address
  *   getBalance()            native CCD balance
  *   getBalanceForAddress()  convenience: balance of any known address
- *   index / path / keyPair  account identity + keys
+ *   path / keyPair         account identity + keys
  *
  * Later:
  *   verify / quoteSendTransaction / quoteTransfer / getTransactionReceipt
@@ -74,9 +74,6 @@ export default class WalletAccountConcordium extends WalletAccountReadOnly {
   /** Whether this account has been disposed. */
   get disposed() { return this._disposed === true; }
 
-  /** WDK account index (the credential counter). */
-  get index() { return this._credNumber; }
-
   /** Concordium path "provider/identity/cred". */
   get path() { return `${this._providerIndex}/${this._identityIndex}/${this._credNumber}`; }
 
@@ -89,7 +86,7 @@ export default class WalletAccountConcordium extends WalletAccountReadOnly {
     };
   }
 
-  // ---- read operations (Phase 1) ----
+  // ---- read operations ----
 
   /** Derive and return the Base58 account address. Overrides the base. */
   async getAddress() {

@@ -12,7 +12,7 @@
  *       npm run example
  */
 
-import WalletManagerConcordium, { AccountNotCreatedError } from '../index.js';
+import WalletManagerConcordium, { AccountNotCreatedError, CONCORDIUM_TESTNET_CONFIG } from '../index.js';
 
 // The throwaway test seed + the exact identity index used to create the
 // account in Phase 0, so index 0 here maps to that same account.
@@ -22,15 +22,12 @@ const TEST_SEED =
 const KNOWN_ACCOUNT = '3GEmZc57STNxVqWykUceXAeCVsDzaogq6wNZhDLAV8bRNYzUYd';
 
 const wdkLikeConfig = {
-  network: 'Testnet',
-  endpoint: { host: 'grpc.testnet.concordium.com', port: 20000, secure: true },
-  identityProviderIndex: 0,
-  identityIndex: 899424164,   // the fresh identity index from the Phase 0 run
+  ...CONCORDIUM_TESTNET_CONFIG,
 };
 
 async function main() {
   const manager = new WalletManagerConcordium(TEST_SEED, wdkLikeConfig);
-  const account = await manager.getAccount(0); // -> cred 0 under that identity
+  const account = await manager.getAccountByPath('0/899424164/0');
 
   console.log('Account path (provider/identity/cred):', account.path);
 

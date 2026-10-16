@@ -85,7 +85,7 @@ test('recoverAccounts collects hits and stops after gapLimit consecutive empties
     return call <= 2 ? jsonRes([proxyRow(`3ADDR${call}`)]) : jsonRes([]);
   };
 
-  const found = await m.recoverAccounts({ gapLimit: 3, maxIndex: 20 });
+  const found = await m.recoverAccounts({ providerIndex: 0, identityIndex: 899424164, gapLimit: 3, maxIndex: 20 });
   assert.equal(found.length, 2, 'should recover exactly the two funded indexes');
   assert.equal(found[0].index, 0);
   assert.equal(found[1].index, 1);

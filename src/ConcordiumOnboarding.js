@@ -35,16 +35,18 @@
  */
 
 import * as sdk from '@concordium/web-sdk';
+import { validateIdentityCoordinates } from './identity-coordinates.js';
 
 export default class ConcordiumOnboarding {
   /** @param {import('./WalletManagerConcordium.js').default} manager */
   constructor(manager) {
+    manager._requireWalletProxy();
     this._m = manager;
   }
 
-  get _network() { return this._m._ccd.network; }
+  get _network() { return this._m._ccd.derivationNetwork; }
   get _seedHex() { return this._m._seedHex; }
-  get _walletProxy() { return this._m._ccd.walletProxy; }
+  get _walletProxy() { return this._m._requireWalletProxy(); }
 
   async _ctx() {
     return {
@@ -72,11 +74,12 @@ export default class ConcordiumOnboarding {
    * Step 1: build the identity request and the browser issuance URL.
    */
   async createIdentityRequest({
-    providerIndex = this._m._ccd.identityProviderIndex,
-    identityIndex = this._m._ccd.identityIndex,
+    providerIndex,
+    identityIndex,
     arThreshold,
     redirectUri = 'http://localhost:4000/callback',
   } = {}) {
+    validateIdentityCoordinates(providerIndex, identityIndex);
     const { sdk, global } = await this._ctx();
     const entry = await this._provider(providerIndex);
     const { ipInfo, arsInfos, metadata } = entry;
@@ -94,7 +97,7 @@ export default class ConcordiumOnboarding {
 
     // v1 request must go to the v1 endpoint; state is WRAPPED under idObjectRequest.
     const issuanceStart = (metadata?.issuanceStart
-      || 'https://id-service.testnet.concordium.com/api/v0/identity').replace('/v0/', '/v1/');
+      || 'https://id-service.testnet.concordium.com/api/v1/identity');
     const params = new URLSearchParams({
       state: JSON.stringify({ idObjectRequest: idRequest }),
       response_type: 'code',
@@ -136,11 +139,12 @@ export default class ConcordiumOnboarding {
    */
   async createAccount({
     identityObject,
-    providerIndex = this._m._ccd.identityProviderIndex,
-    identityIndex = this._m._ccd.identityIndex,
+    providerIndex,
+    identityIndex,
     credNumber = 0,
     revealedAttributes = [],
-  }) {
+  } = {}) {
+    validateIdentityCoordinates(providerIndex, identityIndex);
     const { sdk, client, global } = await this._ctx();
     const entry = await this._provider(providerIndex);
 

@@ -4,18 +4,18 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { makeManager, KNOWN_ADDRESS, PLT_TOKEN, CIS2_TOKEN } from './helpers.mjs';
+import { makeManager, ACCOUNT_PATH, KNOWN_ADDRESS, PLT_TOKEN, CIS2_TOKEN } from './helpers.mjs';
 
 test('getAddress derives the known testnet address', async () => {
   const m = makeManager();
-  const a = await m.getAccount(0);
+  const a = await m.getAccountByPath(ACCOUNT_PATH);
   assert.equal(await a.getAddress(), KNOWN_ADDRESS);
   m.dispose();
 });
 
 test('getBalance returns a positive CCD balance', async () => {
   const m = makeManager();
-  const a = await m.getAccount(0);
+  const a = await m.getAccountByPath(ACCOUNT_PATH);
   const bal = await a.getBalance();
   assert.equal(typeof bal, 'bigint');
   assert.ok(bal > 0n, `expected > 0 microCCD, got ${bal}`);
@@ -24,7 +24,7 @@ test('getBalance returns a positive CCD balance', async () => {
 
 test('getTokenBalance reads the PLT balance', async () => {
   const m = makeManager();
-  const a = await m.getAccount(0);
+  const a = await m.getAccountByPath(ACCOUNT_PATH);
   const bal = await a.getTokenBalance(PLT_TOKEN);
   assert.ok(bal > 0n, `expected to hold some ${PLT_TOKEN}, got ${bal}`);
   m.dispose();
@@ -32,7 +32,7 @@ test('getTokenBalance reads the PLT balance', async () => {
 
 test('getTokenBalance reads the CIS-2 balance (same method, different id)', async () => {
   const m = makeManager();
-  const a = await m.getAccount(0);
+  const a = await m.getAccountByPath(ACCOUNT_PATH);
   const bal = await a.getTokenBalance(CIS2_TOKEN);
   assert.ok(bal > 0n, `expected to hold some ${CIS2_TOKEN}, got ${bal}`);
   m.dispose();
@@ -40,7 +40,7 @@ test('getTokenBalance reads the CIS-2 balance (same method, different id)', asyn
 
 test('getCis2Metadata resolves the on-chain metadata URL (and symbol when reachable)', async () => {
   const m = makeManager();
-  const a = await m.getAccount(0);
+  const a = await m.getAccountByPath(ACCOUNT_PATH);
   const { url, metadata } = await a.getCis2Metadata(CIS2_TOKEN);
   // The URL comes from the contract on-chain and must always resolve.
   assert.ok(url, 'expected a metadata URL from the contract');

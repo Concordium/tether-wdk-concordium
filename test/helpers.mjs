@@ -6,7 +6,7 @@
  * well-known all-"abandon" BIP-39 test seed.
  */
 
-import WalletManagerConcordium from '../index.js';
+import WalletManagerConcordium, { CONCORDIUM_TESTNET_CONFIG } from '../index.js';
 
 /** Well-known BIP-39 test seed (public; used across the examples). */
 export const TEST_SEED =
@@ -15,13 +15,13 @@ export const TEST_SEED =
 
 /** Config for the test account created on testnet in Phase 0. */
 export const CONFIG = {
-  network: 'Testnet',
-  endpoint: { host: 'grpc.testnet.concordium.com', port: 20000, secure: true },
-  identityProviderIndex: 0,
-  identityIndex: 899424164,
+  ...CONCORDIUM_TESTNET_CONFIG,
 };
 
-/** The address account 0 derives to under CONFIG (deterministic). */
+export const IDENTITY_COORDINATES = { providerIndex: 0, identityIndex: 899424164 };
+export const ACCOUNT_PATH = '0/899424164/0';
+
+/** The address derived from ACCOUNT_PATH on testnet (deterministic). */
 export const KNOWN_ADDRESS = '3GEmZc57STNxVqWykUceXAeCVsDzaogq6wNZhDLAV8bRNYzUYd';
 
 /** Tokens the test account holds on testnet. */

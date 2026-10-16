@@ -7,7 +7,7 @@ import { makeManager } from '../helpers.mjs';
 test('accounts inherit the read-only base and expose their disposal state', async () => {
   const manager = makeManager();
   try {
-    const account = await manager.getAccount();
+    const account = await manager.getAccountByPath('0/0/0');
     assert.ok(account instanceof WalletAccountReadOnly);
     assert.equal(account.disposed, false);
     manager.dispose();
@@ -20,7 +20,7 @@ test('accounts inherit the read-only base and expose their disposal state', asyn
 test('normalized transaction receipts remain explicitly unsupported', async () => {
   const manager = makeManager();
   try {
-    const account = await manager.getAccount();
+    const account = await manager.getAccountByPath('0/0/0');
     await assert.rejects(() => account.getTransaction('unused'), NotImplementedError);
   } finally {
     manager.dispose();

@@ -7,13 +7,8 @@
  * the Concordium-specific implementations of the abstract methods
  * (getAccount, getAccountByPath, getFeeRates).
  *
- * Account-index mapping (design decision — see README):
- *   Concordium keys are identified by THREE numbers
- *     (identityProviderIndex, identityIndex, credentialCounter).
- *   WDK gives one integer `index`. We map it to the credential counter
- *   under a fixed provider + identity chosen in config:
- *     getAccount(i) -> (cfg.identityProviderIndex, cfg.identityIndex, i)
- *   getAccountByPath("provider/identity/cred") sets all three explicitly.
+ * Accounts are selected only by explicit "provider/identity/credentialCounter"
+ * paths. Manager configuration does not select an identity.
  */
 
 import WalletManager, { NotImplementedError } from '@tetherto/wdk-wallet';
@@ -21,51 +16,21 @@ import * as sdk from '@concordium/web-sdk';
 import { ConcordiumGRPCNodeClient, credentials } from '@concordium/web-sdk/nodejs';
 import WalletAccountConcordium from './WalletAccountConcordium.js';
 import ConcordiumOnboarding from './ConcordiumOnboarding.js';
+import { parseConfig } from './config.js';
 
-const DEFAULT_NETWORK = 'Testnet';
-
-// Per-network defaults. Passing just { network: 'Mainnet' } selects the mainnet
-// endpoint + wallet-proxy automatically; every field stays overridable via config.
-// NB: for production mainnet Concordium recommends running your own node + proxy;
-// these are the public endpoints its own Desktop Wallet uses.
-const NETWORK_DEFAULTS = {
-  Testnet: {
-    endpoint: { host: 'grpc.testnet.concordium.com', port: 20000, secure: true },
-    walletProxy: 'https://wallet-proxy.testnet.concordium.com',
-  },
-  Mainnet: {
-    endpoint: { host: 'grpc.mainnet.concordium.software', port: 20000, secure: true },
-    walletProxy: 'https://wallet-proxy.mainnet.concordium.software',
-  },
-};
-
-// Network-independent defaults.
-const COMMON_DEFAULTS = {
-  identityProviderIndex: 0,
-  identityIndex: 0,
-};
+import { validateIdentityCoordinates } from './identity-coordinates.js';
 
 export default class WalletManagerConcordium extends WalletManager {
   /**
    * @param {string | Uint8Array} seed  BIP-39 mnemonic or raw seed bytes.
-   * @param {object} config  WDK WalletConfig plus Concordium fields (network,
-   *   endpoint, walletProxy, identityProviderIndex, identityIndex).
-   * @throws {Error} If `config.network` is neither 'Testnet' nor 'Mainnet'.
+   * @param {object} config WDK WalletConfig plus required useMainnetKeyDerivation
+   *   and grpcUrl, and optional walletProxy.
+   * @throws {Error} If configuration is missing or invalid.
    */
-  constructor(seed, config = {}) {
+  constructor(seed, config) {
+    const parsed = parseConfig(config);
     super(seed, config);                       // base stores the seed + config
-    const network = config.network || DEFAULT_NETWORK;
-    const base = NETWORK_DEFAULTS[network];
-    if (!base) {
-      throw new Error(`Unknown network "${network}". Use 'Testnet' or 'Mainnet'.`);
-    }
-    this._ccd = {
-      ...COMMON_DEFAULTS,
-      ...base,                                             // network endpoint + walletProxy
-      ...config,                                           // caller overrides (incl. network)
-      network,
-      endpoint: { ...base.endpoint, ...(config.endpoint || {}) },   // deep-merge endpoint
-    };
+    this._ccd = parsed;
     this._client = null;   // shared gRPC client (lazy)
     this._global = null;   // cached cryptographic parameters
   }
@@ -77,12 +42,19 @@ export default class WalletManagerConcordium extends WalletManager {
 
   async _getClient() {
     if (!this._client) {
-      const { host, port, secure } = this._ccd.endpoint;
+      const { host, port, secure } = this._ccd.grpcEndpoint;
       this._client = new ConcordiumGRPCNodeClient(
         host, port, secure ? credentials.createSsl() : credentials.createInsecure()
       );
     }
     return this._client;
+  }
+
+  _requireWalletProxy() {
+    if (!this._ccd.walletProxy) {
+      throw new Error('config.walletProxy is required for account discovery and dev/testnet onboarding.');
+    }
+    return this._ccd.walletProxy;
   }
 
   async _getGlobal() {
@@ -95,16 +67,9 @@ export default class WalletManagerConcordium extends WalletManager {
     return fetch(url, options);
   }
 
-  /**
-   * Get the account at a WDK index (mapped to a credential counter).
-   * @param {number} [index=0]
-   * @returns {Promise<import('@tetherto/wdk-wallet').IWalletAccount>}
-   */
-  async getAccount(index = 0, _options = {}) {
-    if (typeof index === 'string') {
-      throw new NotImplementedError('Signer-name accounts are not supported yet (Phase 1).');
-    }
-    return this._makeAccount(this._ccd.identityProviderIndex, this._ccd.identityIndex, index);
+  /** Unsupported: all identity coordinates must be supplied through a path. */
+  async getAccount(_index, _options) {
+    throw new NotImplementedError('getAccount is not supported. Use getAccountByPath("provider/identity/credentialCounter").');
   }
 
   /**
@@ -143,6 +108,7 @@ export default class WalletManagerConcordium extends WalletManager {
    * @returns {ConcordiumOnboarding}
    */
   getOnboarding() {
+    this._requireWalletProxy();
     return new ConcordiumOnboarding(this);
   }
 
@@ -192,7 +158,7 @@ export default class WalletManagerConcordium extends WalletManager {
         `findAccountByPublicKey: expected a 32-byte hex Ed25519 public key, got "${hex}".`
       );
     }
-    const url = `${this._ccd.walletProxy}/v0/keyAccounts/${hex}${onlySimple ? '?onlySimple=y' : ''}`;
+    const url = `${this._requireWalletProxy()}/v0/keyAccounts/${hex}${onlySimple ? '?onlySimple=y' : ''}`;
     const res = await this._fetch(url);
     if (res.status === 404) return [];                 // no accounts for this key
     if (!res.ok) {
@@ -214,9 +180,9 @@ export default class WalletManagerConcordium extends WalletManager {
    * (provider, identity), derive each public key, and ask the wallet-proxy which
    * accounts it controls. Stops after `gapLimit` consecutive empty indexes.
    *
-   * @param {object} [opts]
-   * @param {number}  [opts.providerIndex=cfg.identityProviderIndex]
-   * @param {number}  [opts.identityIndex=cfg.identityIndex]
+   * @param {object} opts
+   * @param {number} opts.providerIndex Required identity-provider index.
+   * @param {number} opts.identityIndex Required identity index.
    * @param {number}  [opts.startIndex=0]   First credential counter to try.
    * @param {number}  [opts.gapLimit=3]     Stop after this many consecutive empty indexes.
    * @param {number}  [opts.maxIndex=50]    Hard cap on how far to scan.
@@ -224,14 +190,16 @@ export default class WalletManagerConcordium extends WalletManager {
    * @returns {Promise<Array<{ index: number, path: string, address: string, publicKey: string }>>}
    */
   async recoverAccounts({
-    providerIndex = this._ccd.identityProviderIndex,
-    identityIndex = this._ccd.identityIndex,
+    providerIndex,
+    identityIndex,
     startIndex = 0,
     gapLimit = 3,
     maxIndex = 50,
     onlySimple = false,
   } = {}) {
-    const wallet = sdk.ConcordiumHdWallet.fromHex(this._seedHex, this._ccd.network);
+    validateIdentityCoordinates(providerIndex, identityIndex);
+    this._requireWalletProxy();
+    const wallet = sdk.ConcordiumHdWallet.fromHex(this._seedHex, this._ccd.derivationNetwork);
     const found = [];
     let gap = 0;
     for (let i = startIndex; i <= maxIndex && gap < gapLimit; i++) {
@@ -260,12 +228,12 @@ export default class WalletManagerConcordium extends WalletManager {
   }
 
   async _makeAccount(providerIndex, identityIndex, credNumber) {
-    const wallet = sdk.ConcordiumHdWallet.fromHex(this._seedHex, this._ccd.network);
+    const wallet = sdk.ConcordiumHdWallet.fromHex(this._seedHex, this._ccd.derivationNetwork);
     const account = new WalletAccountConcordium({
       wallet,
       getClient: () => this._getClient(),
       getGlobal: () => this._getGlobal(),
-      network: this._ccd.network,
+      network: this._ccd.derivationNetwork,
       providerIndex,
       identityIndex,
       credNumber,

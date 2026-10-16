@@ -12,23 +12,26 @@ import WalletManager, {
   WalletConfig,
 } from '@tetherto/wdk-wallet';
 
-export interface ConcordiumEndpoint {
-  host: string;
-  port: number;
-  /** true = TLS (createSsl). The public testnet node requires it. */
-  secure?: boolean;
+export interface WalletManagerConcordiumConfig extends WalletConfig {
+  /** Selects Mainnet keys when true, Testnet-compatible keys otherwise. Does not verify the chain. */
+  useMainnetKeyDerivation: boolean;
+  /** Required gRPC HTTP(S) URL. HTTPS enables TLS; default ports are 443/80. No credentials, path, query, or fragment. */
+  grpcUrl: string;
+  /** Required only for onboarding and account recovery; may include a base path. */
+  walletProxy?: string;
 }
 
-export interface WalletManagerConcordiumConfig extends WalletConfig {
-  network?: 'Testnet' | 'Mainnet';
-  endpoint?: ConcordiumEndpoint;
-  /** Wallet-proxy base URL (used for onboarding + account recovery). */
-  walletProxy?: string;
-  /** Concordium identity-provider index WDK indices live under. Default 0. */
-  identityProviderIndex?: number;
-  /** Concordium identity index WDK indices live under. Default 0. */
-  identityIndex?: number;
-}
+/** Public endpoint presets; spread to customize. */
+export const CONCORDIUM_MAINNET_CONFIG: {
+  useMainnetKeyDerivation: boolean;
+  grpcUrl: string;
+  walletProxy: string;
+};
+export const CONCORDIUM_TESTNET_CONFIG: {
+  useMainnetKeyDerivation: boolean;
+  grpcUrl: string;
+  walletProxy: string;
+};
 
 /** One account returned by the wallet-proxy /v0/keyAccounts lookup. */
 export interface KeyAccount {
@@ -47,8 +50,8 @@ export interface FindAccountByPublicKeyOptions {
 
 /** Options for {@link WalletManagerConcordium.recoverAccounts}. */
 export interface RecoverAccountsOptions {
-  providerIndex?: number;
-  identityIndex?: number;
+  providerIndex: number;
+  identityIndex: number;
   /** First credential counter to try. Default 0. */
   startIndex?: number;
   /** Stop after this many consecutive empty indexes. Default 3. */
@@ -131,7 +134,6 @@ export class TransactionRejectedError extends Error {
 
 export class WalletAccountConcordium extends WalletAccountReadOnly implements IWalletAccount {
   get disposed(): boolean;
-  get index(): number;
   get path(): string;
   get keyPair(): { publicKey: Uint8Array; privateKey: Uint8Array | null };
 
@@ -187,18 +189,28 @@ export class WalletAccountConcordium extends WalletAccountReadOnly implements IW
 export class ConcordiumOnboarding {
   constructor(manager: WalletManagerConcordium);
   /** Step 1 — build the identity request; open issuanceUrl in a browser. */
-  createIdentityRequest(): Promise<{ issuanceUrl: string; identityIndex: number }>;
+  createIdentityRequest(options: {
+    providerIndex: number;
+    identityIndex: number;
+    arThreshold?: number;
+    redirectUri?: string;
+  }): Promise<{ issuanceUrl: string; identityIndex: number }>;
   /** Step 2 — after the browser redirect, poll for the issued identity object. */
   retrieveIdentity(callbackUrl: string): Promise<unknown>;
   /** Step 3 — deploy the credential; the account now exists on-chain. */
-  createAccount(options: { identityObject: unknown; identityIndex: number }): Promise<{ address: string }>;
+  createAccount(options: {
+    identityObject: unknown;
+    providerIndex: number;
+    identityIndex: number;
+    credNumber?: number;
+  }): Promise<{ address: string }>;
 }
 
 export default class WalletManagerConcordium extends WalletManager {
-  constructor(seed: string | Uint8Array, config?: WalletManagerConcordiumConfig);
-  getAccount(index?: number, options?: { signerName?: string }): Promise<WalletAccountConcordium>;
-  /** Named signers are not supported yet; rejects with NotImplementedError. */
-  getAccount(signerName: string): Promise<WalletAccountConcordium>;
+  constructor(seed: string | Uint8Array, config: WalletManagerConcordiumConfig);
+  /** Unsupported; use getAccountByPath with all three identity coordinates. */
+  getAccount(index?: number, options?: { signerName?: string }): Promise<never>;
+  getAccount(signerName: string): Promise<never>;
   getAccountByPath(path: string): Promise<WalletAccountConcordium>;
   /** Not applicable on Concordium (energy-based fees) — throws. Use the quote methods. */
   getFeeRates(): Promise<never>;
@@ -220,7 +232,7 @@ export default class WalletManagerConcordium extends WalletManager {
    * Recover accounts from the seed by scanning credential counters and looking
    * up each derived public key. Stops after `gapLimit` consecutive empty indexes.
    */
-  recoverAccounts(options?: RecoverAccountsOptions): Promise<RecoveredAccount[]>;
+  recoverAccounts(options: RecoverAccountsOptions): Promise<RecoveredAccount[]>;
 
   dispose(): void;
 }

@@ -19,7 +19,7 @@
  * Run:  npm run example:sponsored
  */
 
-import WalletManagerConcordium, { TransactionRejectedError } from '../index.js';
+import WalletManagerConcordium, { TransactionRejectedError, CONCORDIUM_TESTNET_CONFIG } from '../index.js';
 
 const TEST_SEED =
   'abandon abandon abandon abandon abandon abandon ' +
@@ -28,10 +28,7 @@ const WALLET_PROXY = 'https://wallet-proxy.testnet.concordium.com';
 const TOKEN = process.env.PLT_TOKEN || 'USDT';
 
 const config = {
-  network: 'Testnet',
-  endpoint: { host: 'grpc.testnet.concordium.com', port: 20000, secure: true },
-  identityProviderIndex: 0,
-  identityIndex: 899424164,
+  ...CONCORDIUM_TESTNET_CONFIG,
 };
 
 async function outcome(hash) {
@@ -52,7 +49,7 @@ function reportSponsoredError(e) {
 
 async function main() {
   const manager = new WalletManagerConcordium(TEST_SEED, config);
-  const account = await manager.getAccount(0);   // plays both sender AND sponsor here
+  const account = await manager.getAccountByPath('0/899424164/0');   // plays both sender AND sponsor here
   const addr = await account.getAddress();
   console.log('Sender & sponsor account:', addr, '\nToken:', TOKEN);
 

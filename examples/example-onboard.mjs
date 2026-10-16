@@ -18,7 +18,7 @@
  */
 
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
-import WalletManagerConcordium from '../index.js';
+import WalletManagerConcordium, { CONCORDIUM_TESTNET_CONFIG } from '../index.js';
 
 const TEST_SEED =
   'abandon abandon abandon abandon abandon abandon ' +
@@ -26,12 +26,9 @@ const TEST_SEED =
 const STATE = './onboard-state.json';
 const CALLBACK = './callback.txt';
 
-function baseConfig(identityIndex) {
+function baseConfig() {
   return {
-    network: 'Testnet',
-    endpoint: { host: 'grpc.testnet.concordium.com', port: 20000, secure: true },
-    identityProviderIndex: 0,
-    identityIndex,
+    ...CONCORDIUM_TESTNET_CONFIG,
   };
 }
 
@@ -39,10 +36,10 @@ async function doRequest() {
   const identityIndex = Math.floor(Math.random() * 2 ** 31);
   writeFileSync(STATE, JSON.stringify({ identityIndex }, null, 2));
 
-  const manager = new WalletManagerConcordium(TEST_SEED, baseConfig(identityIndex));
+  const manager = new WalletManagerConcordium(TEST_SEED, baseConfig());
   const onboarding = manager.getOnboarding();
 
-  const { issuanceUrl } = await onboarding.createIdentityRequest({ identityIndex });
+  const { issuanceUrl } = await onboarding.createIdentityRequest({ providerIndex: 0, identityIndex });
   console.log('Fresh identity index:', identityIndex, '(saved to onboard-state.json)');
   console.log('\n1. Open this URL in a browser:\n');
   console.log('   ' + issuanceUrl + '\n');
@@ -58,7 +55,7 @@ async function doCreate() {
   const { identityIndex } = JSON.parse(readFileSync(STATE, 'utf8'));
   const callbackUrl = readFileSync(CALLBACK, 'utf8').trim();
 
-  const manager = new WalletManagerConcordium(TEST_SEED, baseConfig(identityIndex));
+  const manager = new WalletManagerConcordium(TEST_SEED, baseConfig());
   const onboarding = manager.getOnboarding();
 
   console.log('Retrieving the issued identity (polling the provider)...');
@@ -66,12 +63,12 @@ async function doCreate() {
   console.log('  ✅ identity issued.');
 
   console.log('Creating the on-chain account...');
-  const { address } = await onboarding.createAccount({ identityObject, identityIndex });
+  const { address } = await onboarding.createAccount({ identityObject, providerIndex: 0, identityIndex });
   console.log('  🎉 account created:', address);
 
   // Prove integration: read the new account back through the standard interface.
   console.log('\nReading the new account through the WDK interface...');
-  const account = await manager.getAccount(0);   // cred 0 under this identity
+  const account = await manager.getAccountByPath(`0/${identityIndex}/0`);
   const derived = await account.getAddress();
   console.log('  getAddress():', derived, derived === address ? '✅ matches' : '⚠️  mismatch');
   await new Promise((r) => setTimeout(r, 12000));   // let it finalize

@@ -5,7 +5,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { makeManager, KNOWN_ADDRESS, PLT_TOKEN, RUN_WRITE, submissionStatus } from './helpers.mjs';
+import { makeManager, ACCOUNT_PATH, KNOWN_ADDRESS, PLT_TOKEN, RUN_WRITE, submissionStatus } from './helpers.mjs';
 import { TransactionRejectedError } from '../../index.js';
 
 const sponsorable = (a) => a.buildSponsorableTransfer({
@@ -14,7 +14,7 @@ const sponsorable = (a) => a.buildSponsorableTransfer({
 
 test('build + all four sign methods produce signable JSON, in both orders', async () => {
   const m = makeManager();
-  const a = await m.getAccount(0);
+  const a = await m.getAccountByPath(ACCOUNT_PATH);
 
   // Order A: sponsor first (3 -> 2)
   let txA = await sponsorable(a);
@@ -33,7 +33,7 @@ test('build + all four sign methods produce signable JSON, in both orders', asyn
 
 test('sponsored submission finalizes with outcome: success (WRITE=1)', { skip: !RUN_WRITE }, async () => {
   const m = makeManager();
-  const a = await m.getAccount(0);
+  const a = await m.getAccountByPath(ACCOUNT_PATH);
   let tx = await sponsorable(a);
   tx = await a.signAsSponsorToBeSigned(tx);
   tx = await a.signAsAccountPreSponsored(tx);
@@ -45,7 +45,7 @@ test('sponsored submission finalizes with outcome: success (WRITE=1)', { skip: !
 
 test('submitSponsored throws TransactionRejectedError for an unheld token (WRITE=1)', { skip: !RUN_WRITE }, async () => {
   const m = makeManager();
-  const a = await m.getAccount(0);
+  const a = await m.getAccountByPath(ACCOUNT_PATH);
   // USDT exists on testnet but this account holds none, so the transfer finalizes
   // in a rejected state — submitSponsored must surface that as a throw, not a
   // normal { hash, fee } result (Concordium review comments 4/5).

@@ -13,7 +13,7 @@ import { TEST_SEED, CONFIG, KNOWN_ADDRESS, fakeClient } from '../helpers.mjs';
 /** A real account (offline-derived) with its client dependency replaced by a fake. */
 async function accountWithFakeClient(client) {
   const manager = new WalletManagerConcordium(TEST_SEED, CONFIG);
-  const account = await manager.getAccount(0);
+  const account = await manager.getAccountByPath('0/899424164/0');
   account._getClient = async () => client;   // inject the fake (dependency was constructor-provided)
   return { account, dispose: () => manager.dispose() };
 }

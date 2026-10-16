@@ -13,7 +13,7 @@
  *       npm run example:send
  */
 
-import WalletManagerConcordium, { AccountNotCreatedError } from '../index.js';
+import WalletManagerConcordium, { AccountNotCreatedError, CONCORDIUM_TESTNET_CONFIG } from '../index.js';
 
 const TEST_SEED =
   'abandon abandon abandon abandon abandon abandon ' +
@@ -21,10 +21,7 @@ const TEST_SEED =
 const WALLET_PROXY = 'https://wallet-proxy.testnet.concordium.com';
 
 const config = {
-  network: 'Testnet',
-  endpoint: { host: 'grpc.testnet.concordium.com', port: 20000, secure: true },
-  identityProviderIndex: 0,
-  identityIndex: 899424164,      // the identity from Phase 0
+  ...CONCORDIUM_TESTNET_CONFIG,
 };
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -50,7 +47,7 @@ async function ensureFunded(account, address) {
 
 async function main() {
   const manager = new WalletManagerConcordium(TEST_SEED, config);
-  const account = await manager.getAccount(0);
+  const account = await manager.getAccountByPath('0/899424164/0');
   const address = await account.getAddress();
   console.log('Account:', address);
 

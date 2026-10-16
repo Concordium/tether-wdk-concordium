@@ -1,6 +1,6 @@
 /** Live testnet fixtures. Never fall back to the public unit-test mnemonic. */
 import WalletManagerConcordium from '../../index.js';
-import { CONFIG as UNIT_CONFIG } from '../helpers.mjs';
+import { CONFIG as UNIT_CONFIG, IDENTITY_COORDINATES as UNIT_IDENTITY } from '../helpers.mjs';
 
 export { PLT_TOKEN, CIS2_TOKEN, submissionStatus } from '../helpers.mjs';
 export const RUN_WRITE = process.env.WRITE === '1';
@@ -18,11 +18,15 @@ function indexFromEnvironment(name, fallback) {
   return Number(value);
 }
 
+export const IDENTITY_COORDINATES = {
+  providerIndex: indexFromEnvironment('TESTNET_PROVIDER_INDEX', UNIT_IDENTITY.providerIndex),
+  identityIndex: indexFromEnvironment('TESTNET_IDENTITY_INDEX', UNIT_IDENTITY.identityIndex),
+};
+export const ACCOUNT_PATH = `${IDENTITY_COORDINATES.providerIndex}/${IDENTITY_COORDINATES.identityIndex}/0`;
+
 export function makeManager() {
   return new WalletManagerConcordium(process.env.TESTNET_SEED, {
     ...UNIT_CONFIG,
     walletProxy: process.env.WALLET_PROXY || 'https://wallet-proxy.testnet.concordium.com',
-    identityProviderIndex: indexFromEnvironment('TESTNET_PROVIDER_INDEX', UNIT_CONFIG.identityProviderIndex),
-    identityIndex: indexFromEnvironment('TESTNET_IDENTITY_INDEX', UNIT_CONFIG.identityIndex),
   });
 }
