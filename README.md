@@ -359,6 +359,10 @@ Write tests cover transfers, sponsored submission, and rejection handling, with
 fee comparisons for PLT and CIS-2 transfers. They require a funded account holding
 the configured tokens. Live integration tests are not run in CI.
 
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for release notes and unreleased changes.
+
 ## Support
 
 Report bugs and request help through
