@@ -45,13 +45,14 @@ export class TransactionRejectedError extends Error {
 }
 
 export default class WalletAccountConcordium extends WalletAccountReadOnly {
-  constructor({ wallet, getClient, getGlobal, network,
-                providerIndex, identityIndex, credNumber, address }) {
+  constructor({ wallet, getClient, getGlobal, fetch: fetchFn = (url, options) => fetch(url, options),
+                network, providerIndex, identityIndex, credNumber, address }) {
     super(address);                 // base keeps the address (if known up front)
     this._sdk = sdk;                // the statically-imported @concordium/web-sdk namespace
     this._wallet = wallet;
     this._getClient = getClient;
     this._getGlobal = getGlobal;
+    this._fetch = fetchFn;          // HTTP for CIS-2 metadata; injectable like getClient
     this._network = network;
     this._providerIndex = providerIndex;
     this._identityIndex = identityIndex;
@@ -290,7 +291,7 @@ export default class WalletAccountConcordium extends WalletAccountReadOnly {
     const contract = await this._cis2Contract(ref);
     const { url } = await contract.tokenMetadata(ref.tokenId);
     let metadata = null;
-    try { metadata = await (await fetch(url)).json(); } catch { /* url unreachable / not JSON */ }
+    try { metadata = await (await this._fetch(url)).json(); } catch { /* url unreachable / not JSON */ }
     return { url, metadata };
   }
 
