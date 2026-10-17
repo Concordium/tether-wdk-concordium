@@ -8,6 +8,11 @@ User-facing changes to `@concordium/wdk-wallet-concordium` are recorded here.
 
 - Package changelog, included in the npm distribution.
 
+### Fixed
+
+- `dispose()` now zeroes and drops the seed; previously it remained readable through `manager.seed`. Requesting an account afterwards throws `DisposalError`.
+- Reading `account.keyPair` after disposal no longer throws; it returns the public key with `privateKey: null`.
+
 ## [0.1.0] - 2026-10-16
 
 ### Added
