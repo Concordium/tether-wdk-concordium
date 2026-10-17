@@ -8,7 +8,7 @@
  * paths. Manager configuration does not select an identity.
  */
 
-import WalletManager, { NotImplementedError } from '@tetherto/wdk-wallet';
+import WalletManager, { DisposalError, NotImplementedError } from '@tetherto/wdk-wallet';
 import * as sdk from '@concordium/web-sdk';
 import { ConcordiumGRPCNodeClient, credentials } from '@concordium/web-sdk/nodejs';
 import WalletAccountConcordium, { AccountNotCreatedError } from './WalletAccountConcordium.js';
@@ -33,6 +33,7 @@ export default class WalletManagerConcordium extends WalletManager {
 
   /** The 64-byte BIP-39 seed (inherited from the base) as hex, for ConcordiumHdWallet. */
   get _seedHex() {
+    if (!this.seed) throw new DisposalError('The wallet manager has been disposed.');
     return Buffer.from(this.seed).toString('hex');
   }
 
@@ -155,7 +156,10 @@ export default class WalletManagerConcordium extends WalletManager {
   }
 
   dispose() {
-    super.dispose();     // disposes tracked accounts + clears the seed
+    super.dispose();     // disposes tracked accounts
+    // The base keeps the seed after dispose(), so zero the bytes and drop the reference here.
+    if (this._seed instanceof Uint8Array) this._seed.fill(0);
+    this._seed = undefined;
     this._client = null;
     this._global = null;
   }
