@@ -69,10 +69,10 @@ export default class WalletAccountConcordium extends WalletAccountReadOnly {
 
   /** The account's key pair (Ed25519). */
   get keyPair() {
+    if (this._disposed) return { publicKey: this._disposedPublicKey, privateKey: null };
     return {
       publicKey: this._wallet.getAccountPublicKey(this._providerIndex, this._identityIndex, this._credNumber),
-      privateKey: this._disposed ? null
-        : this._wallet.getAccountSigningKey(this._providerIndex, this._identityIndex, this._credNumber),
+      privateKey: this._wallet.getAccountSigningKey(this._providerIndex, this._identityIndex, this._credNumber),
     };
   }
 
@@ -113,8 +113,14 @@ export default class WalletAccountConcordium extends WalletAccountReadOnly {
   /** Returns this same instance; signing capabilities are not removed. */
   async toReadOnlyAccount() { return this; }
 
-  /** Erase key references. */
-  dispose() { this._disposed = true; this._wallet = null; }
+  /** Erase key references. The public key is kept: it is not secret, and keyPair stays readable. */
+  dispose() {
+    if (this._disposed) return;
+    this._disposedPublicKey = this._wallet?.getAccountPublicKey(
+      this._providerIndex, this._identityIndex, this._credNumber) ?? null;
+    this._disposed = true;
+    this._wallet = null;
+  }
 
   // ---- native CCD transfers ----
 
