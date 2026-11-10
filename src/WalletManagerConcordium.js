@@ -14,7 +14,7 @@ import { ConcordiumGRPCNodeClient, credentials } from '@concordium/web-sdk/nodej
 import WalletAccountConcordium, { AccountNotCreatedError } from './WalletAccountConcordium.js';
 import { parseConfig } from './config.js';
 
-import { validateIdentityCoordinates } from './identity-coordinates.js';
+import { validateIdentityCoordinates, validateCredNumber } from './identity-coordinates.js';
 
 /** Concordium's key derivation takes a 64-byte seed: what a seed phrase becomes. */
 const SEED_BYTES = 64;
@@ -101,6 +101,13 @@ export default class WalletManagerConcordium extends WalletManager {
     if (![p, id, cred].every(Number.isSafeInteger)) {
       throw new Error(`Concordium path "${path}" exceeds the supported integer range.`);
     }
+    // Within Concordium's ranges: outside them the SDK would silently reduce the number to another account's.
+    try {
+      validateIdentityCoordinates(p, id);
+      validateCredNumber(cred, 'the account number (the last part)');
+    } catch (e) {
+      throw new Error(`Concordium path "${path}": ${e.message}`);
+    }
     const info = await this._lookupAccountInfo(p, id, cred);
     if (!info) throw new AccountNotCreatedError(undefined, { path: value });
     return this._makeAccount(p, id, cred, info.accountAddress.toString());
@@ -147,6 +154,8 @@ export default class WalletManagerConcordium extends WalletManager {
     maxIndex = 50,
   } = {}) {
     validateIdentityCoordinates(providerIndex, identityIndex);
+    validateCredNumber(startIndex, 'startIndex');
+    validateCredNumber(maxIndex, 'maxIndex');
     const found = [];
     let gap = 0;
     for (let i = startIndex; i <= maxIndex && gap < gapLimit; i++) {

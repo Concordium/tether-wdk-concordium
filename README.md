@@ -140,7 +140,8 @@ Concordium key derivation uses three coordinates: `providerIndex / identityIndex
 Use `manager.getAccountByPath('0/0/3')` or `wdk.getAccountByPath('concordium', '0/0/3')` to select all three coordinates.
 Replace the example path with the coordinates associated with your account.
 
-Paths must contain three non-negative safe integers, without leading zeros.
+Paths must contain three non-negative integers, without leading zeros, within Concordium's ranges: `providerIndex`
+and `identityIndex` up to 2147483647, `credentialNumber` up to 255. Numbers outside them are refused.
 Each `getAccountByPath` call performs a fresh credential-ID lookup at the node's
 default last-finalized block. It returns an account only if the credential exists,
 using the address returned by the node. Chain cryptographic parameters are cached;
