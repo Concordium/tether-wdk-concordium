@@ -82,7 +82,7 @@ try {
 }
 ```
 
-The constructor accepts a BIP-39 mnemonic or raw seed bytes (`Uint8Array`).
+The constructor accepts a BIP-39 mnemonic or a 64-byte raw seed (`Uint8Array`).
 The seed, key-derivation mode, identity-provider index, identity index, and credential counter must match the account you intend to access.
 Account retrieval fetches the network's cryptographic parameters and verifies
 the derived credential through the node. The public demonstration seed/path may

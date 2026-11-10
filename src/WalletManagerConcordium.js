@@ -8,7 +8,7 @@
  * paths. Manager configuration does not select an identity.
  */
 
-import WalletManager, { DisposalError, NotImplementedError } from '@tetherto/wdk-wallet';
+import WalletManager, { DisposalError, NotImplementedError, ValueError } from '@tetherto/wdk-wallet';
 import * as sdk from '@concordium/web-sdk';
 import { ConcordiumGRPCNodeClient, credentials } from '@concordium/web-sdk/nodejs';
 import WalletAccountConcordium, { AccountNotCreatedError } from './WalletAccountConcordium.js';
@@ -16,14 +16,23 @@ import { parseConfig } from './config.js';
 
 import { validateIdentityCoordinates } from './identity-coordinates.js';
 
+/** Concordium's key derivation takes a 64-byte seed: what a seed phrase becomes. */
+const SEED_BYTES = 64;
+
 export default class WalletManagerConcordium extends WalletManager {
   /**
    * @param {string | Uint8Array} seed  BIP-39 mnemonic or raw seed bytes.
    * @param {object} config WDK WalletConfig plus required useMainnetKeyDerivation
    *   and grpcUrl.
+   * @throws {ValueError} If the seed phrase is invalid, or raw seed bytes are not 64 bytes long.
    * @throws {Error} If configuration is missing or invalid.
    */
   constructor(seed, config) {
+    // The base accepts raw seeds of 16 to 64 bytes, but Concordium's SDK needs exactly 64, and its error
+    // for any other length repeats the whole seed. Refuse it here, without the seed in the message.
+    if (seed instanceof Uint8Array && seed.length !== SEED_BYTES) {
+      throw new ValueError('The seed must be a BIP-39 seed phrase or a 64-byte seed.');
+    }
     const parsed = parseConfig(config);
     super(seed, config);                       // base stores the seed + config
     this._ccd = parsed;

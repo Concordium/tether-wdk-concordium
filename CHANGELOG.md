@@ -12,6 +12,7 @@ User-facing changes to `@concordium/wdk-wallet-concordium` are recorded here.
 
 - `dispose()` now zeroes and drops the seed; previously it remained readable through `manager.seed`. Requesting an account afterwards throws `DisposalError`.
 - Reading `account.keyPair` after disposal no longer throws; it returns the public key with `privateKey: null`.
+- Raw seed bytes that are not 64 bytes long are refused at construction with a `ValueError` that does not contain the seed; previously the first account request failed with an error from Concordium's SDK that repeated the whole seed.
 
 ## [0.1.0] - 2026-10-16
 
