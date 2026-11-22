@@ -41,7 +41,12 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
           cache: npm
-          cache-dependency-path: identity/package-lock.json
+          cache-dependency-path: |
+            package-lock.json
+            identity/package-lock.json
+      - name: Install the wallet package's dependencies (the identity walkthrough example uses the wallet package)
+        run: npm ci
+        working-directory: .
       - run: npm ci
       - run: npm test
       - name: Verify unit tests without external networking
