@@ -78,7 +78,7 @@ test('the plug-in is checked: an unknown step, or a step that is not a function,
   assert.throws(() => wallet({ makeCoffee: () => {} }), /cryptography has an unknown step "makeCoffee"/);
   assert.throws(() => wallet({ createIdentityRequestWithKeys: 'fast' }), /cryptography\.createIdentityRequestWithKeys must be a function/);
   assert.throws(() => wallet('native'), /cryptography must be an object/);
-  assert.deepEqual(CRYPTOGRAPHY_STEPS.toSorted(), Object.keys(sdkCryptography).toSorted(), 'the SDK provides every step');
+  assert.deepEqual([...CRYPTOGRAPHY_STEPS].sort(), Object.keys(sdkCryptography).sort(), 'the SDK provides every step');
 });
 
 // Steps 2 and 3.
@@ -113,7 +113,7 @@ test('a whole journey goes through the plug-in, every step, and gives the same a
   const result = await checkPresentation(answer, question, { node: chain, network: 'testnet' });
   assert.equal(result.ok, true, JSON.stringify(result.reasons));
 
-  assert.deepEqual([...used].toSorted(), CRYPTOGRAPHY_STEPS.toSorted(), 'every heavy step went through the plug-in');
+  assert.deepEqual([...used].sort(), [...CRYPTOGRAPHY_STEPS].sort(), 'every heavy step went through the plug-in');
   for (const w of [viaPlugIn, withSdk, restarted]) w.dispose();
 });
 

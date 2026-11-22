@@ -125,14 +125,24 @@ async function withRecordedDemo(changes, run) {
   try { await run(demo, storeFolder); } finally { await demo.close(); rmSync(storeFolder, { recursive: true, force: true }); }
 }
 
-/** POST to the demo's API with its token. */
-async function post(demo, path, body = {}) {
-  const response = await fetch(`${demo.url}${path.slice(1)}`, {
-    method: 'POST', headers: { 'x-demo-token': demo.token, 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+/** POST to the demo's API with its token. (node:http, a new connection each time: Node 18's fetch sometimes reuses
+ *  a connection the previous test's server has reset.) */
+function post(demo, path, body = {}) {
+  return new Promise((resolve, reject) => {
+    const { hostname, port } = new URL(demo.url);
+    const data = JSON.stringify(body);
+    const req = httpRequest({ hostname, port, path, method: 'POST', headers: { 'x-demo-token': demo.token,
+      'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) } }, (res) => {
+      let text = '';
+      res.setEncoding('utf8');
+      res.on('data', (c) => { text += c; });
+      res.on('end', () => resolve({ status: res.statusCode, body: JSON.parse(text) }));
+    });
+    req.on('error', reject);
+    req.end(data);
   });
-  return { status: response.status, body: await response.json() };
 }
-const state = async (demo) => (await fetch(`${demo.url}api/state`, { headers: { 'x-demo-token': demo.token } })).json();
+const state = async (demo) => JSON.parse((await get(`${demo.url}api/state`, { token: demo.token })).body);
 async function until(demo, check) {
   for (let i = 0; i < 100; i++) { const s = await state(demo); if (check(s)) return s; await new Promise((r) => setTimeout(r, 50)); }
   const last = await state(demo);
