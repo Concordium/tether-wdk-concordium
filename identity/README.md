@@ -23,6 +23,21 @@ like any other account.
 > exporting it for the wallet to keep, creating accounts from it, recovering it from the
 > seed, and proving facts to websites, with the websites' check (tested on testnet).
 
+**New to this?** The [integration guide](../docs/integration-guide.md) takes a wallet developer through it step by
+step, in the order a wallet meets each step, assuming no Concordium background. This README is the reference for each
+part, and the [threat model](../docs/threat-model.md) says what the packages protect against and what is left to the
+wallet.
+
+**Contents:** [What you can build](#what-you-can-build) · [Requirements](#requirements) ·
+[Configuration](#configuration) · [Identity providers](#identity-providers) ·
+[Starting identity verification](#starting-identity-verification) ·
+[Collecting the issued identity](#collecting-the-issued-identity) ·
+[Keeping identities](#keeping-identities-export-and-import) · [Creating accounts](#creating-accounts) ·
+[Recovery](#getting-the-identity-back-recovery) · [Proofs](#proving-facts-proofs) ·
+[Company identities](#company-identities-business-id) · [Phones](#phones-plugging-in-faster-cryptography) ·
+[Errors](#handling-errors) · [Callback listener](#optional-built-in-callback-listener-nodejs-desktop-apps) ·
+[Development](#development)
+
 ## What you can build
 
 Short stories of what a wallet, or a business working with wallets, can do with this package. Each one has

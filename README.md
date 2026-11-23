@@ -6,6 +6,12 @@ Derive account keys, read balances, sign messages, transfer CCD and tokens, and 
 > **Beta:** This package is currently in beta.
 > Test thoroughly in development environments before using it in production.
 
+**Identities and new accounts:** the companion package [`@concordium/wdk-identity-concordium`](identity/README.md),
+in this repository, verifies a user's identity with an identity provider, creates Concordium accounts from it,
+gets both back from the seed phrase, and proves facts to websites. Start with the
+[integration guide](docs/integration-guide.md); the [threat model](docs/threat-model.md) says what the packages
+protect against.
+
 ## Features
 
 - Seed-based account key derivation using `ConcordiumHdWallet`.
@@ -362,10 +368,15 @@ JSON as opaque. Sponsored transfers support PLTs, not CIS-2 tokens.
 
 ## Account creation
 
-Concordium accounts require an identity and an on-chain credential deployment.
-This package works with existing accounts; deriving keys does not create an
-account. Integrate production onboarding at the host-application layer, then use
-the account's derivation path and account recovery API to locate the resulting account.
+Concordium accounts require an identity and an on-chain credential deployment, so
+deriving keys does not create an account. This package works with accounts that exist.
+To create them, use the companion package
+[`@concordium/wdk-identity-concordium`](identity/README.md#creating-accounts) in this
+repository: it verifies the user's identity with an identity provider and creates
+accounts from it, without the Concordium ID App (see the
+[integration guide, chapters 3 to 5](docs/integration-guide.md#3-verify-an-identity)).
+The new account is then used through this package with `getAccountByPath()`, using
+the path the identity package returns.
 
 ## API and limitations
 
