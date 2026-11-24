@@ -10,7 +10,10 @@
  * account that hasn't been created yet (rather than a misleading 0).
  */
 
-import { WalletAccountReadOnly, NotImplementedError } from '@tetherto/wdk-wallet';
+import {
+  WalletAccountReadOnly, NotImplementedError, InvalidTokenError, ValueError, TransferError, TransferErrorReason,
+  TransactionError, TransactionErrorReason, NoSuchElementError, ProviderError, ProviderErrorReason,
+} from '@tetherto/wdk-wallet';
 import * as sdk from '@concordium/web-sdk';
 import * as plt from '@concordium/web-sdk/plt';
 
@@ -24,6 +27,75 @@ export class AccountNotCreatedError extends Error {
     this.path = path;
   }
 }
+
+/**
+ * Why a token transfer cannot happen, as checkTransfer reports it (and, later, as the transfer error says). WDK's
+ * own reasons, plus Concordium's token rules:
+ *   INSUFFICIENT_BALANCE        the account that pays the fee (this one, or the sponsor) holds too little CCD for it
+ *   INSUFFICIENT_TOKEN_BALANCE  this account holds too little of the token
+ *   INVALID_AMOUNT              the amount is not a whole number of base units above 0
+ *   TOKEN_PAUSED                the token is paused: no transfers until its issuer resumes it
+ *   SENDER_NOT_FOUND            this account is not on chain yet
+ *   RECIPIENT_NOT_FOUND         there is no account at the recipient's address
+ *   SPONSOR_NOT_FOUND           there is no account at the sponsor's address
+ *   SENDER_NOT_ON_ALLOW_LIST    the token keeps an allow list, and this account is not on it
+ *   RECIPIENT_NOT_ON_ALLOW_LIST the token keeps an allow list, and the recipient is not on it
+ *   SENDER_ON_DENY_LIST         this account is on the token's deny list
+ *   RECIPIENT_ON_DENY_LIST      the recipient is on the token's deny list
+ *   CONTRACT_REFUSED            a CIS-2 token's contract would refuse the transfer (its own rules)
+ * And, only when the chain itself refused a transfer that was sent (transfer, submitSponsored):
+ *   OPERATION_NOT_PERMITTED     the token refused it, and its rules as they are now do not say why (the chain's own
+ *                               words are in the message; e.g. the issuer changed a rule and changed it back)
+ *   REJECTED                    the chain refused it for another reason (its reject reason is on the error)
+ */
+export const ConcordiumTransferErrorReason = Object.freeze({
+  ...TransferErrorReason,
+  INVALID_AMOUNT: 'INVALID_AMOUNT',
+  TOKEN_PAUSED: 'TOKEN_PAUSED',
+  SENDER_NOT_FOUND: 'SENDER_NOT_FOUND',
+  RECIPIENT_NOT_FOUND: 'RECIPIENT_NOT_FOUND',
+  SPONSOR_NOT_FOUND: 'SPONSOR_NOT_FOUND',
+  SENDER_NOT_ON_ALLOW_LIST: 'SENDER_NOT_ON_ALLOW_LIST',
+  RECIPIENT_NOT_ON_ALLOW_LIST: 'RECIPIENT_NOT_ON_ALLOW_LIST',
+  SENDER_ON_DENY_LIST: 'SENDER_ON_DENY_LIST',
+  RECIPIENT_ON_DENY_LIST: 'RECIPIENT_ON_DENY_LIST',
+  CONTRACT_REFUSED: 'CONTRACT_REFUSED',
+  OPERATION_NOT_PERMITTED: 'OPERATION_NOT_PERMITTED',
+  REJECTED: 'REJECTED',
+});
+
+/**
+ * A token transfer that cannot happen, or that the chain refused: WDK's TransferError, with Concordium's reasons.
+ *   reason        the first reason (a ConcordiumTransferErrorReason value)
+ *   reasons       every reason found, each { reason, message, account? } (as checkTransfer gives them)
+ *   hash          set only when the transfer was sent and the chain refused it (its fee was still charged)
+ *   rejectReason  the chain's own reject reason, when it refused it
+ */
+export class ConcordiumTransferError extends TransferError {
+  /**
+   * @param {string} message
+   * @param {{ reason: string, reasons?: Array<{reason: string, message: string, account?: string}>, hash?: string,
+   *   rejectReason?: object, cause?: unknown }} options
+   */
+  constructor(message, { reason, reasons, hash, rejectReason, cause } = {}) {
+    super(message, { reason, cause });
+    this.name = 'ConcordiumTransferError';
+    this.reasons = reasons ?? [{ reason, message }];
+    this.hash = hash ?? null;
+    this.rejectReason = rejectReason ?? null;
+  }
+}
+
+/** The error for a transfer checkTransfer found problems with: the first problem says it, all are on `reasons`. */
+function blockedTransfer(check) {
+  const [first, ...more] = check.reasons;
+  const message = more.length ? `${first.message} (and ${more.length} more: see reasons)` : first.message;
+  return new ConcordiumTransferError(message, { reason: first.reason, reasons: check.reasons });
+}
+
+/** The standard CIS-2 refusals (the contract's reject codes), in plain words. */
+const CIS2_REFUSALS = { [-42000001]: 'the token id is not known to the contract', [-42000002]: 'not enough of the token',
+  [-42000003]: 'not authorised' };
 
 /**
  * Thrown when a transaction is submitted and FINALIZES, but its on-chain outcome
@@ -180,16 +252,35 @@ export default class WalletAccountConcordium extends WalletAccountReadOnly {
    * rejected on-chain outcome as an error rather than a normal result.
    * @returns {Promise<{hash: string, fee: bigint}>} On success (finalized, not rejected).
    * @throws {AccountNotCreatedError} If this account does not exist on-chain yet.
-   * @throws {TransactionRejectedError} If the transaction finalizes in a rejected state.
+   * @throws {TransactionError} reason INSUFFICIENT_BALANCE (WDK's): too little CCD for the amount and the fee, found
+   *   before sending (for a { to, value } request), or the chain refused it for that (then `hash` is set).
+   * @throws {TransactionRejectedError} If the transaction finalizes in a rejected state for another reason.
    * @throws {Error} If the node rejects the submission (e.g. verification/nonce failure).
    */
   async sendTransaction(tx) {
     const client = await this._getClient();
     const isRequest = tx && typeof tx === 'object' && 'to' in tx && 'value' in tx;
+    if (isRequest) {
+      // Enough CCD for the amount and the fee? Said before anything is sent.
+      const [balance, { fee }] = await Promise.all([this.getBalance(), this.quoteSendTransaction(tx)]);
+      const needed = BigInt(tx.value) + fee;
+      if (balance < needed) {
+        throw new TransactionError(`This account holds ${units(balance, 6)} CCD; the transfer needs ${units(needed, 6)} CCD `
+          + `(${units(BigInt(tx.value), 6)} plus a fee of ${units(fee, 6)}).`, { reason: TransactionErrorReason.INSUFFICIENT_BALANCE });
+      }
+    }
     const signed = isRequest ? await this.signTransaction(tx) : tx;
 
     const hash = await client.sendTransaction(signed);
-    return this._awaitFinalized(hash);
+    try {
+      return await this._awaitFinalized(hash);
+    } catch (e) {
+      if (e instanceof TransactionRejectedError && e.rejectReason?.tag === 'AmountTooLarge') {
+        throw Object.assign(new TransactionError('The chain refused the transfer: this account holds too little CCD for it.',
+          { reason: TransactionErrorReason.INSUFFICIENT_BALANCE, cause: e }), { hash: e.hash });
+      }
+      throw e;
+    }
   }
 
   /**
@@ -227,9 +318,64 @@ export default class WalletAccountConcordium extends WalletAccountReadOnly {
     return s.verifyMessageSignature(message, JSON.parse(signature), info);
   }
 
-  /** Normalized receipts are unsupported; use getTransactionReceipt. */
-  async getTransaction(_hash) {
-    throw new NotImplementedError('getTransaction is not supported. Use getTransactionReceipt.');
+  // ---- transaction status (WDK's standard receipt) ----
+  //
+  // WDK describes every chain's transactions in the same words, so a wallet app handles them all alike; these
+  // translate Concordium's. The node says a transaction is received (waiting for a block), committed (in a block, not
+  // final yet: blocks can still be reorganised for a few seconds) or finalized (for good). WDK's words:
+  //   received, committed   →  'pending'  (WDK's 'confirmed' means "reversible only under extreme conditions", which
+  //                                        committed is not; Concordium is final within seconds anyway)
+  //   finalized              →  'final', with success (false if the chain rejected it), fee and block
+  //   not known to the node  →  NoSuchElementError, as WDK specifies for an unknown hash
+  // WDK's 'dropped' has no Concordium counterpart: a transaction that never lands (it expired before reaching a block)
+  // just stops being known. waitForTransaction then ends with WDK's TimeoutError.
+
+  /**
+   * How often waitForTransaction asks (ms): Concordium makes a block about every 2 seconds, and is final within
+   * seconds. The time budget stays WDK's (60 s, defaultWaitTimeout).
+   */
+  get defaultWaitInterval() { return 2000; }
+
+  /**
+   * A transaction's status, as WDK's standard receipt (WDK's waitForTransaction builds on it).
+   * @param {string} hash  the transaction's hash (hex)
+   * @returns {Promise<{hash: string, finality: 'pending' | 'final', success?: boolean, block?: number, fee?: bigint,
+   *   blockHash?: string}>}  once final: `success` (false if rejected), `fee` (microCCD; for a sponsored transaction,
+   *   what the sponsor paid), `block` (the block's height) and `blockHash` (Concordium's own block reference)
+   * @throws {NoSuchElementError} If the node does not know the transaction.
+   * @throws {ProviderError} If the node could not be asked (waitForTransaction tries again, up to 3 times in a row).
+   * @throws {ValueError} If `hash` is not a transaction hash.
+   */
+  async getTransaction(hash) {
+    const s = this._sdk;
+    let transactionHash;
+    try { transactionHash = s.TransactionHash.fromHexString(hash); } catch {
+      throw new ValueError('hash must be a transaction hash (64 hex characters).');
+    }
+    const client = await this._getClient();
+    const askNode = async (question) => {
+      try {
+        return await question();
+      } catch (e) {
+        if (isNotFound(e)) throw new NoSuchElementError(`The node does not know transaction ${hash}.`);
+        throw new ProviderError(`The node could not be asked: ${e?.message ?? e}`, { reason: ProviderErrorReason.NETWORK_ERROR, cause: e });
+      }
+    };
+    const status = await askNode(() => client.getBlockItemStatus(transactionHash));
+    if (status?.status === 'received' || status?.status === 'committed') return { hash, finality: 'pending' };
+    if (status?.status !== 'finalized') {
+      throw new ProviderError(`The node gave an unexpected status: ${JSON.stringify(status?.status)}.`, { reason: ProviderErrorReason.INTERNAL_SERVER_ERROR });
+    }
+    const { blockHash, summary } = status.outcome;
+    const info = await askNode(() => client.getBlockInfo(blockHash));
+    return {
+      hash,
+      finality: 'final',
+      success: !s.isRejectTransaction(summary),
+      block: Number(info.blockHeight),
+      fee: feePaid(summary),
+      blockHash: s.BlockHash.toHexString(blockHash),
+    };
   }
 
   async getTransactionReceipt(hash) {
@@ -256,15 +402,99 @@ export default class WalletAccountConcordium extends WalletAccountReadOnly {
 
   /**
    * Transfer a PLT or CIS-2 token. amount is in base units.
+   *
+   * Checked first, as checkTransfer checks it: if anything would refuse it (a paused token, a list, the balance, the
+   * fee…), nothing is sent and ConcordiumTransferError lists every reason. If the chain refuses it after all (its
+   * rules changed in the moment between the check and the transfer), the error says why in the same reasons, with
+   * the transaction's hash (its fee was charged).
    * @returns {Promise<{hash: string, fee: bigint}>} On success (finalized, not rejected).
-   * @throws {TransactionRejectedError} If the transfer finalizes in a rejected state.
-   * @throws {Error} If token decimals/energy can't be determined, or the node rejects the submission.
+   * @throws {ConcordiumTransferError} If the transfer cannot happen (nothing sent), or the chain refused it (`hash` set).
+   * @throws {InvalidTokenError} If there is no such PLT on this network.
+   * @throws {ValueError} If the recipient is not an account address.
+   * @throws {Error} If the node cannot be asked, or rejects the submission itself.
    */
   async transfer({ token, recipient, amount }) {
+    const check = await this.checkTransfer({ token, recipient, amount });
+    if (!check.ok) throw blockedTransfer(check);
     const ref = parseTokenRef(token);
-    return ref.kind === 'cis2'
-      ? this._cis2Transfer(ref, recipient, BigInt(amount))
-      : this._pltTransfer(ref, recipient, BigInt(amount));
+    try {
+      return ref.kind === 'cis2'
+        ? await this._cis2Transfer(ref, recipient, BigInt(amount))
+        : await this._pltTransfer(ref, recipient, BigInt(amount));
+    } catch (e) {
+      throw await this._explainRefusal(e, { sender: await this.getAddress(), token: ref.kind === 'plt' ? ref.symbol : undefined });
+    }
+  }
+
+  /**
+   * Turn a refusal into ConcordiumTransferError, in checkTransfer's reasons: the chain's (a TransactionRejectedError),
+   * or the SDK's own check just before sending (its token errors: the rules changed after our check). Anything else
+   * is returned as it is. When the token "does not permit" it, the token's rules as they are now say why: paused,
+   * or the account the chain names (the sender or the recipient) on its deny list, or not on its allow list.
+   * @param {unknown} e
+   * @param {{ sender: string, token?: string }} transfer  the transfer's sender (this account, or a sponsored
+   *   transaction's sender) and, when known, the PLT's name (the SDK's own errors do not all carry it)
+   */
+  async _explainRefusal(e, { sender, token }) {
+    const R = ConcordiumTransferErrorReason;
+    const refused = (reason, message, account, { hash, rejectReason } = {}) => {
+      const said = hash ? `The chain refused the transfer: ${message}` : message;
+      return new ConcordiumTransferError(said, { reason, reasons: [{ reason, message, ...(account ? { account } : {}) }], hash, rejectReason, cause: e });
+    };
+    /** Why the token does not permit it, from its rules now; null if they do not say. */
+    const whyNotPermitted = async (tokenName, named) => {
+      try {
+        if ((await this.getTokenRules(tokenName)).paused) return [R.TOKEN_PAUSED, `${tokenName} is paused.`, undefined];
+        if (!named) return null;
+        const party = named === sender ? 'SENDER' : 'RECIPIENT';
+        const who = party === 'SENDER' ? 'The sending account' : 'The recipient';
+        const standing = await this.getTokenAccountStatus(tokenName, named);
+        if (standing.onDenyList === true) return [R[`${party}_ON_DENY_LIST`], `${who} is on ${tokenName}'s deny list.`, named];
+        if (standing.onAllowList === false) return [R[`${party}_NOT_ON_ALLOW_LIST`], `${who} is not on ${tokenName}'s allow list.`, named];
+      } catch { /* the rules could not be read: say what the chain said */ }
+      return null;
+    };
+
+    // The SDK's own check just before sending (plt.Token.transfer validates): nothing was sent.
+    if (e instanceof plt.Token.PausedError) return refused(R.TOKEN_PAUSED, `${e.tokenId} is paused: no transfers are possible until its issuer resumes it.`);
+    if (e instanceof plt.Token.InsufficientFundsError) return refused(R.INSUFFICIENT_TOKEN_BALANCE, 'This account holds too little of the token.', sender);
+    if (e instanceof plt.Token.NotAllowedError) {
+      const named = e.receiver?.address ?? String(e.receiver);
+      const why = token ? await whyNotPermitted(token, named) : null;
+      return why ? refused(...why) : refused(R.OPERATION_NOT_PERMITTED, e.message, named);
+    }
+
+    if (!(e instanceof TransactionRejectedError)) return e;
+    const chain = { hash: e.hash, rejectReason: e.rejectReason };
+    const rr = e.rejectReason;
+    if (rr?.tag === 'TokenUpdateTransactionFailed') {
+      const tokenName = rr.contents?.tokenId?.value ?? String(rr.contents?.tokenId ?? '');
+      let decoded;
+      try { decoded = plt.parseTokenModuleRejectReason(rr.contents); } catch { decoded = rr.contents; }
+      const named = decoded?.details?.address ? String(decoded.details.address.address ?? decoded.details.address) : undefined;
+      switch (decoded?.type) {
+        case 'tokenBalanceInsufficient':
+          return refused(R.INSUFFICIENT_TOKEN_BALANCE, `the sending account holds too little ${tokenName}.`, sender, chain);
+        case 'addressNotFound':
+          return named === sender
+            ? refused(R.SENDER_NOT_FOUND, 'the sending account is not on chain.', named, chain)
+            : refused(R.RECIPIENT_NOT_FOUND, 'there is no account at the recipient\'s address.', named, chain);
+        case 'operationNotPermitted': {
+          const why = await whyNotPermitted(tokenName, named);
+          if (why) return refused(why[0], why[1].replace(/^./, (c) => c.toLowerCase()), why[2], chain);
+          return refused(R.OPERATION_NOT_PERMITTED, `${tokenName} does not permit it${named ? ` for ${named}` : ''}`
+            + `${decoded.details?.reason ? ` ("${decoded.details.reason}")` : ''}.`, named, chain);
+        }
+        default:
+          return refused(R.REJECTED, `${tokenName} refused it (${decoded?.type ?? 'unknown'}).`, undefined, chain);
+      }
+    }
+    if (rr?.tag === 'RejectedReceive') {
+      const why = CIS2_REFUSALS[Number(rr.rejectReason)] ?? `code ${rr.rejectReason}`;
+      return refused(R.CONTRACT_REFUSED, `the token's contract refused it: ${why}.`, undefined, chain);
+    }
+    if (rr?.tag === 'AmountTooLarge') return refused(R.INSUFFICIENT_BALANCE, 'the paying account holds too little CCD.', undefined, chain);
+    return refused(R.REJECTED, `it was rejected (${rr?.tag ?? 'unknown reason'}).`, undefined, chain);
   }
 
   /** Estimate the fee of a PLT or CIS-2 token transfer. */
@@ -293,6 +523,229 @@ export default class WalletAccountConcordium extends WalletAccountReadOnly {
     let metadata = null;
     try { metadata = await (await this._fetch(url)).json(); } catch { /* url unreachable / not JSON */ }
     return { url, metadata };
+  }
+
+  // ---- token rules (regulated tokens) ----
+  //
+  // Protocol-level tokens (PLTs) can restrict who may hold or move them: a token may keep an allow list (only accounts
+  // on it may send or receive), a deny list (accounts on it may not), and may be paused (no transfers at all). These
+  // reads let a wallet see the rules before it offers a transfer, rather than finding out when it fails. CIS-2 tokens
+  // have no standard rules: their smart contract decides when a transfer is made, so their rules read as null
+  // ("not known").
+
+  /**
+   * A token's rules, as the chain holds them now.
+   * @param {string} tokenAddress  a PLT ("UPEU" or "plt:UPEU") or a CIS-2 token ("cis2:<index>:<subindex>:<tokenIdHex>")
+   * @returns {Promise<{kind: 'plt' | 'cis2', token: string, name: string | null, decimals: number | null,
+   *   totalSupply: bigint | null, paused: boolean | null, allowList: boolean | null, denyList: boolean | null,
+   *   mintable: boolean | null, burnable: boolean | null, governanceAccount: string | null, metadataUrl: string | null}>}
+   *   For a PLT: `allowList` / `denyList` say whether the token keeps such a list; `governanceAccount` is the account
+   *   that manages the token (its lists, pausing). For a CIS-2 token every rule is null.
+   * @throws {InvalidTokenError} If there is no such PLT on this network.
+   */
+  async getTokenRules(tokenAddress) {
+    const ref = parseTokenRef(tokenAddress);
+    if (ref.kind === 'cis2') {
+      return {
+        kind: 'cis2', token: String(tokenAddress).trim(), name: null, decimals: null, totalSupply: null,
+        paused: null, allowList: null, denyList: null, mintable: null, burnable: null, governanceAccount: null, metadataUrl: null,
+      };
+    }
+    const tok = await this._pltToken(ref);
+    const m = tok.moduleState ?? {};
+    const governance = m.governanceAccount?.address ?? m.governanceAccount;
+    return {
+      kind: 'plt',
+      token: tok.info.id.value,
+      name: m.name ?? null,
+      decimals: tokenDecimals(tok) ?? null,
+      totalSupply: tok.info.state?.totalSupply ? BigInt(tok.info.state.totalSupply.value) : null,
+      paused: m.paused === true,
+      allowList: m.allowList === true,
+      denyList: m.denyList === true,
+      mintable: m.mintable === true,
+      burnable: m.burnable === true,
+      governanceAccount: governance ? governance.toString() : null,
+      metadataUrl: m.metadata?.url ?? null,
+    };
+  }
+
+  /**
+   * One account's standing with a token: whether it is on chain, its balance, and whether it is on the token's
+   * allow list and deny list.
+   * @param {string} tokenAddress  a PLT or a CIS-2 token (as getTokenRules)
+   * @param {string} [address]  the account (Base58); default: this account
+   * @returns {Promise<{token: string, address: string, exists: boolean, balance: bigint,
+   *   onAllowList: boolean | null, onDenyList: boolean | null}>}  `onAllowList` / `onDenyList` are null when the token
+   *   keeps no such list (and for CIS-2 tokens); an account not on chain has `exists: false` and a balance of 0
+   * @throws {InvalidTokenError} If there is no such PLT on this network.
+   */
+  async getTokenAccountStatus(tokenAddress, address) {
+    const s = this._sdk;
+    const who = address ?? await this.getAddress();
+    const accountAddress = s.AccountAddress.fromBase58(who);
+    const ref = parseTokenRef(tokenAddress);
+    if (ref.kind === 'cis2') {
+      const exists = await this._accountExists(accountAddress);
+      const contract = await this._cis2Contract(ref);
+      const balance = exists ? BigInt(await contract.balanceOf({ tokenId: ref.tokenId, address: accountAddress })) : 0n;
+      return { token: String(tokenAddress).trim(), address: who, exists, balance, onAllowList: null, onDenyList: null };
+    }
+    return this._pltStanding(await this._pltToken(ref), who);
+  }
+
+  /** An account's standing with a PLT already read (see getTokenAccountStatus), plus its CCD balance (`ccd`). */
+  async _pltStanding(tok, who) {
+    const m = tok.moduleState ?? {};
+    const client = await this._getClient();
+    let info;
+    try {
+      info = await client.getAccountInfo(this._sdk.AccountAddress.fromBase58(who));
+    } catch (e) {
+      if (!isNotFound(e)) throw e;
+    }
+    // The account's entry for this token (none if it never held it); its module state holds its list memberships.
+    const entry = info?.accountTokens?.find((t) => t.id.value === tok.info.id.value);
+    const memberships = entry?.state?.moduleState ? plt.Cbor.decode(entry.state.moduleState, 'TokenModuleAccountState') : {};
+    const standing = {
+      token: tok.info.id.value,
+      address: who,
+      exists: info !== undefined,
+      balance: entry ? BigInt(entry.state.balance.value) : 0n,
+      onAllowList: m.allowList === true ? memberships.allowList === true : null,
+      onDenyList: m.denyList === true ? memberships.denyList === true : null,
+    };
+    Object.defineProperty(standing, 'ccd', { value: info ? BigInt(info.accountAmount?.microCcdAmount ?? 0n) : 0n });
+    return standing;
+  }
+
+  /**
+   * Check a token transfer before sending it: every reason it would be refused, for this account (the sender), the
+   * recipient and the token, with nothing sent and no fee spent. A wallet can show the reasons, or disable "Send".
+   *
+   * For a protocol-level token (PLT): paused? the amount? this account on chain, holding enough? the recipient on
+   * chain? both allowed by the token's allow list and deny list? For a CIS-2 token (no standard rules): the accounts,
+   * the balance, and a dry run of the transfer, which shows whether the token's contract would refuse it. In both
+   * cases: the fee, and whether the account that pays it (this one, or the sponsor) holds enough CCD.
+   *
+   * The rules can change between this check and the transfer (an issuer pauses the token, or changes a list): the
+   * transfer then fails on chain with a reason, as transfer reports it.
+   *
+   * @param {object} options
+   * @param {string} options.token  a PLT ("UPEU") or a CIS-2 token ("cis2:<index>:<subindex>:<tokenIdHex>")
+   * @param {string} options.recipient  the recipient's address (Base58)
+   * @param {number | bigint | string} options.amount  in the token's base units
+   * @param {string} [options.sponsorAddress]  for a sponsored transfer: the sponsor pays the fee
+   * @returns {Promise<{ok: boolean, reasons: Array<{reason: string, message: string, account?: string}>, fee: bigint | null}>}
+   *   `reasons`: ConcordiumTransferErrorReason values, each with a plain message (and the account it concerns);
+   *   `fee`: the fee in microCCD, when it could be worked out
+   * @throws {InvalidTokenError} If there is no such PLT on this network.
+   * @throws {ValueError} If the recipient (or the sponsor) is not an account address.
+   */
+  async checkTransfer({ token, recipient, amount, sponsorAddress } = {}) {
+    const R = ConcordiumTransferErrorReason;
+    const reasons = [];
+    const add = (reason, message, account) => reasons.push({ reason, message, ...(account ? { account } : {}) });
+    for (const [what, address] of [['recipient', recipient], ['sponsorAddress', sponsorAddress]]) {
+      if (what === 'sponsorAddress' && address === undefined) continue;
+      try { this._sdk.AccountAddress.fromBase58(address); } catch { throw new ValueError(`${what} must be an account address (Base58).`); }
+    }
+    let value = null;
+    try { value = BigInt(amount); } catch { /* reported below */ }
+    if (value === null || value <= 0n) add(R.INVALID_AMOUNT, 'The amount must be a whole number of the token\'s base units, above 0.');
+
+    const sender = await this.getAddress();
+    const ref = parseTokenRef(token);
+    let payerCcd;            // the CCD of the account that pays the fee, when read on the way
+    let canQuote = value !== null && value > 0n;
+    if (ref.kind === 'plt') {
+      const tok = await this._pltToken(ref);
+      const m = tok.moduleState ?? {};
+      const name = tok.info.id.value;
+      const decimals = tokenDecimals(tok) ?? 0;
+      if (m.paused === true) add(R.TOKEN_PAUSED, `${name} is paused: no transfers are possible until its issuer resumes it.`);
+      const [from, to] = await Promise.all([this._pltStanding(tok, sender), this._pltStanding(tok, recipient)]);
+      if (!from.exists) {
+        add(R.SENDER_NOT_FOUND, 'This account is not on chain yet.', sender);
+        canQuote = false;
+      } else if (value !== null && value > 0n && from.balance < value) {
+        add(R.INSUFFICIENT_TOKEN_BALANCE, `This account holds ${units(from.balance, decimals)} ${name}; ${units(value, decimals)} is needed.`, sender);
+      }
+      if (!to.exists) add(R.RECIPIENT_NOT_FOUND, 'There is no account at the recipient\'s address.', recipient);
+      for (const [party, standing, address] of [['SENDER', from, sender], ['RECIPIENT', to, recipient]]) {
+        if (!standing.exists) continue;
+        const who = party === 'SENDER' ? 'This account' : 'The recipient';
+        if (standing.onDenyList === true) add(R[`${party}_ON_DENY_LIST`], `${who} is on ${name}'s deny list.`, address);
+        if (standing.onAllowList === false) add(R[`${party}_NOT_ON_ALLOW_LIST`], `${who} is not on ${name}'s allow list.`, address);
+      }
+      if (!sponsorAddress) payerCcd = from.exists ? from.ccd : undefined;
+    } else {
+      const s = this._sdk;
+      const [fromExists, toExists] = await Promise.all([
+        this._accountExists(s.AccountAddress.fromBase58(sender)), this._accountExists(s.AccountAddress.fromBase58(recipient))]);
+      if (!fromExists) add(R.SENDER_NOT_FOUND, 'This account is not on chain yet.', sender);
+      if (!toExists) add(R.RECIPIENT_NOT_FOUND, 'There is no account at the recipient\'s address.', recipient);
+      canQuote = canQuote && fromExists && toExists;
+      if (canQuote) {
+        const contract = await this._cis2Contract(ref);
+        const balance = BigInt(await contract.balanceOf({ tokenId: ref.tokenId, address: s.AccountAddress.fromBase58(sender) }));
+        if (balance < value) {
+          add(R.INSUFFICIENT_TOKEN_BALANCE, `This account holds ${balance} of the token (base units); ${value} is needed.`, sender);
+          canQuote = false;
+        } else {
+          const transfer = { tokenId: ref.tokenId, tokenAmount: value, from: s.AccountAddress.fromBase58(sender), to: s.AccountAddress.fromBase58(recipient) };
+          const dry = await contract.dryRun.transfer(transfer.from, transfer);
+          if (dry?.tag && dry.tag !== 'success') {
+            const code = dry?.reason?.rejectReason ?? dry?.returnValue;
+            const why = CIS2_REFUSALS[Number(code)] ?? dry?.reason?.tag ?? 'see the node';
+            add(R.CONTRACT_REFUSED, `The token's contract would refuse this transfer: ${why}.`);
+            canQuote = false;
+          }
+        }
+      }
+    }
+
+    // The fee, and whether the account that pays it holds enough CCD.
+    let fee = null;
+    if (canQuote && !reasons.some((r) => r.reason === R.RECIPIENT_NOT_FOUND)) {
+      ({ fee } = await this.quoteTransfer({ token, recipient, amount: value }));
+      const payer = sponsorAddress ?? sender;
+      if (payerCcd === undefined) {
+        try {
+          payerCcd = await this.getBalanceForAddress(payer);
+        } catch (e) {
+          if (!(e instanceof AccountNotCreatedError)) throw e;
+          if (sponsorAddress) add(R.SPONSOR_NOT_FOUND, 'There is no account at the sponsor\'s address.', sponsorAddress);
+        }
+      }
+      if (payerCcd !== undefined && payerCcd < fee) {
+        const who = sponsorAddress ? 'The sponsor' : 'This account';
+        add(R.INSUFFICIENT_BALANCE, `${who} pays the fee of ${units(fee, 6)} CCD but holds ${units(payerCcd, 6)} CCD.`, payer);
+      }
+    }
+    return { ok: reasons.length === 0, reasons, fee };
+  }
+
+  /** The PLT a reference names, read from the chain; InvalidTokenError if this network has none by that name. */
+  async _pltToken(ref) {
+    const client = await this._getClient();
+    try {
+      return await plt.Token.fromId(client, plt.TokenId.fromString(ref.symbol));
+    } catch (e) {
+      if (isNotFound(e)) throw new InvalidTokenError(`There is no protocol-level token "${ref.symbol}" on this network.`);
+      throw e;
+    }
+  }
+
+  /** Whether an account exists on chain (the node answers "not found" for one that does not). */
+  async _accountExists(accountAddress) {
+    try {
+      await (await this._getClient()).getAccountInfo(accountAddress);
+      return true;
+    } catch (e) {
+      if (isNotFound(e)) return false;
+      throw e;
+    }
   }
 
   // ---- PLT (protocol-level token) ----
@@ -444,6 +897,9 @@ export default class WalletAccountConcordium extends WalletAccountReadOnly {
     if (ref.kind !== 'plt') {
       throw new NotImplementedError('Sponsored transfers currently target PLT tokens (the stablecoin case).');
     }
+    // Checked first, with the sponsor as the payer of the fee: nothing is built for a transfer that cannot happen.
+    const check = await this.checkTransfer({ token, recipient, amount, sponsorAddress });
+    if (!check.ok) throw blockedTransfer(check);
     const s = this._sdk;
     const client = await this._getClient();
     const tok = await plt.Token.fromId(client, plt.TokenId.fromString(ref.symbol));
@@ -490,9 +946,15 @@ export default class WalletAccountConcordium extends WalletAccountReadOnly {
   async submitSponsored(fullySignedJson) {
     const s = this._sdk;
     const client = await this._getClient();
-    const finalized = s.Transaction.finalize(s.Transaction.signableFromJSON(fullySignedJson));
+    const signable = s.Transaction.signableFromJSON(fullySignedJson);
+    const finalized = s.Transaction.finalize(signable);
     const hash = await client.sendTransaction(finalized);
-    return this._awaitFinalized(hash);
+    try {
+      return await this._awaitFinalized(hash);
+    } catch (e) {
+      // The chain refused it: say why, in checkTransfer's reasons (the sender is the transaction's, not necessarily us).
+      throw await this._explainRefusal(e, { sender: String(signable.header.sender.address ?? signable.header.sender) });
+    }
   }
 
   // -- internal: add one signature (account or sponsor) to a signable JSON --
@@ -523,6 +985,26 @@ export function parseTokenRef(ref) {
   }
   const symbol = str.toLowerCase().startsWith('plt:') ? str.slice(4) : str;
   return { kind: 'plt', symbol };
+}
+
+/** The fee a final transaction cost, in microCCD: for a sponsored one, what the sponsor paid (the sender pays 0). */
+function feePaid(summary) {
+  const cost = summary?.sponsor?.cost ?? summary?.cost;
+  try { return BigInt(cost?.microCcdAmount ?? cost ?? 0n); } catch { return 0n; }
+}
+
+/** An amount in base units as a decimal number for people, e.g. units(1500000n, 6) = '1.5'. */
+function units(value, decimals) {
+  const negative = value < 0n;
+  const digits = (negative ? -value : value).toString().padStart(decimals + 1, '0');
+  const whole = decimals ? digits.slice(0, -decimals) : digits;
+  const fraction = decimals ? digits.slice(-decimals).replace(/0+$/, '') : '';
+  return `${negative ? '-' : ''}${whole}${fraction ? `.${fraction}` : ''}`;
+}
+
+/** The node's "not found" answer (gRPC NOT_FOUND, or its message): no such account, token or transaction. */
+function isNotFound(e) {
+  return e?.code === 'NOT_FOUND' || e?.code === 5 || /not found/i.test(e?.message ?? '');
 }
 
 /** Best-effort lookup of a PLT's decimals from the Token instance. */

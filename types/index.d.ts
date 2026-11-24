@@ -10,6 +10,7 @@ import WalletManager, {
   WalletAccountReadOnly,
   IWalletAccount,
   WalletConfig,
+  TransferError,
 } from '@tetherto/wdk-wallet';
 
 export interface WalletManagerConcordiumConfig extends WalletConfig {
@@ -74,6 +75,42 @@ export interface Cis2Metadata {
 }
 
 /**
+ * A token's rules, from getTokenRules. For a protocol-level token (PLT): whether it is paused, and whether it keeps an
+ * allow list (only accounts on it may send or receive) and a deny list (accounts on it may not). A CIS-2 token has no
+ * standard rules (its contract decides when transferring): every rule is null.
+ */
+export interface TokenRules {
+  kind: 'plt' | 'cis2';
+  /** The token's identifier, e.g. 'UPEU' (as the chain spells it) or 'cis2:12754:0:01'. */
+  token: string;
+  name: string | null;
+  decimals: number | null;
+  totalSupply: bigint | null;
+  paused: boolean | null;
+  allowList: boolean | null;
+  denyList: boolean | null;
+  mintable: boolean | null;
+  burnable: boolean | null;
+  /** The account that manages the token (its lists, pausing). */
+  governanceAccount: string | null;
+  metadataUrl: string | null;
+}
+
+/** One account's standing with a token, from getTokenAccountStatus. */
+export interface TokenAccountStatus {
+  token: string;
+  address: string;
+  /** false for an address with no account on chain (its balance is then 0). */
+  exists: boolean;
+  /** In the token's base units. */
+  balance: bigint;
+  /** null when the token keeps no allow list (and for CIS-2 tokens). */
+  onAllowList: boolean | null;
+  /** null when the token keeps no deny list (and for CIS-2 tokens). */
+  onDenyList: boolean | null;
+}
+
+/**
  * A serialized sponsored transaction (Transaction.JSON) passed between the
  * build/sign/submit steps. Treat it as an opaque value.
  */
@@ -100,6 +137,86 @@ export class AccountNotCreatedError extends Error {
  * Thrown when a transaction finalizes but its on-chain outcome is a rejection.
  * The transaction still has a hash and cost the fee; it just didn't take effect.
  */
+/**
+ * Why a token transfer cannot happen (checkTransfer's reasons): WDK's own TransferErrorReason values plus
+ * Concordium's token rules.
+ */
+export const ConcordiumTransferErrorReason: {
+  /** The account that pays the fee (this one, or the sponsor) holds too little CCD for it. */
+  readonly INSUFFICIENT_BALANCE: 'INSUFFICIENT_BALANCE';
+  /** This account holds too little of the token. */
+  readonly INSUFFICIENT_TOKEN_BALANCE: 'INSUFFICIENT_TOKEN_BALANCE';
+  /** The amount is not a whole number of base units above 0. */
+  readonly INVALID_AMOUNT: 'INVALID_AMOUNT';
+  /** The token is paused: no transfers until its issuer resumes it. */
+  readonly TOKEN_PAUSED: 'TOKEN_PAUSED';
+  readonly SENDER_NOT_FOUND: 'SENDER_NOT_FOUND';
+  readonly RECIPIENT_NOT_FOUND: 'RECIPIENT_NOT_FOUND';
+  readonly SPONSOR_NOT_FOUND: 'SPONSOR_NOT_FOUND';
+  readonly SENDER_NOT_ON_ALLOW_LIST: 'SENDER_NOT_ON_ALLOW_LIST';
+  readonly RECIPIENT_NOT_ON_ALLOW_LIST: 'RECIPIENT_NOT_ON_ALLOW_LIST';
+  readonly SENDER_ON_DENY_LIST: 'SENDER_ON_DENY_LIST';
+  readonly RECIPIENT_ON_DENY_LIST: 'RECIPIENT_ON_DENY_LIST';
+  /** A CIS-2 token's contract would refuse the transfer (its own rules). */
+  readonly CONTRACT_REFUSED: 'CONTRACT_REFUSED';
+  /** Only when the chain refused a sent transfer: the token did not permit it, and its rules now do not say why. */
+  readonly OPERATION_NOT_PERMITTED: 'OPERATION_NOT_PERMITTED';
+  /** Only when the chain refused a sent transfer, for another reason (see rejectReason). */
+  readonly REJECTED: 'REJECTED';
+};
+
+/**
+ * A token transfer that cannot happen (nothing sent), or that the chain refused (`hash` set; the fee was charged):
+ * WDK's TransferError with Concordium's reasons.
+ */
+export class ConcordiumTransferError extends TransferError {
+  constructor(message: string, options: { reason: ConcordiumTransferErrorReason; reasons?: TransferCheck['reasons']; hash?: string; rejectReason?: unknown; cause?: unknown });
+  /** The first reason. */
+  reason: ConcordiumTransferErrorReason;
+  /** Every reason found, each with a plain message and the account it concerns. */
+  reasons: TransferCheck['reasons'];
+  /** The transaction's hash, only when it was sent and the chain refused it. */
+  hash: string | null;
+  /** The chain's own reject reason, when it refused it. */
+  rejectReason: unknown | null;
+}
+export type ConcordiumTransferErrorReason = typeof ConcordiumTransferErrorReason[keyof typeof ConcordiumTransferErrorReason];
+
+/** WDK's standard receipt, from getTransaction, with Concordium's block reference. */
+export interface ConcordiumTransactionReceipt {
+  hash: string;
+  /** 'pending': received, or in a block not yet final. 'final': for good. (Concordium has no 'dropped'.) */
+  finality: 'pending' | 'final';
+  /** Once final: false if the chain rejected the transaction (its fee was still charged). */
+  success?: boolean;
+  /** Once final: the block's height. */
+  block?: number;
+  /** Once final: the fee in microCCD; for a sponsored transaction, what the sponsor paid. */
+  fee?: bigint;
+  /** Once final: the block's hash (Concordium's own block reference). */
+  blockHash?: string;
+}
+
+/** Options for checkTransfer: the transfer, and for a sponsored one, who pays the fee. */
+export interface CheckTransferOptions {
+  token: string;
+  recipient: string;
+  /** In the token's base units. */
+  amount: number | bigint | string;
+  /** For a sponsored transfer: the sponsor pays the fee. */
+  sponsorAddress?: string;
+}
+
+/** What checkTransfer found. */
+export interface TransferCheck {
+  /** true: nothing found that would refuse the transfer. */
+  ok: boolean;
+  /** Every problem found, each with a plain message and the account it concerns. */
+  reasons: Array<{ reason: ConcordiumTransferErrorReason; message: string; account?: string }>;
+  /** The fee in microCCD, when it could be worked out. */
+  fee: bigint | null;
+}
+
 export class TransactionRejectedError extends Error {
   /** The finalized transaction hash. */
   hash: string;
@@ -117,9 +234,18 @@ export class WalletAccountConcordium extends WalletAccountReadOnly implements IW
   getBalance(): Promise<bigint>;
   /** Read the CCD balance of an explicit Base58 address (any account). */
   getBalanceForAddress(address: string): Promise<bigint>;
+  /** The node's own status for a transaction (Concordium's form), or null. WDK prefers getTransaction. */
   getTransactionReceipt(hash: string): Promise<unknown | null>;
-  /** Normalized receipts are unsupported; rejects with NotImplementedError. */
-  getTransaction(hash: string): Promise<never>;
+  /**
+   * A transaction's status as WDK's standard receipt: 'pending' (received, or in a block not yet final) or 'final'
+   * (with success, fee, block and Concordium's blockHash). WDK's waitForTransaction builds on it. Concordium has no
+   * 'dropped': a transaction that never lands stops being known, and waitForTransaction ends with TimeoutError.
+   * @throws {NoSuchElementError} If the node does not know the transaction.
+   * @throws {ProviderError} If the node could not be asked.
+   */
+  getTransaction(hash: string): Promise<ConcordiumTransactionReceipt>;
+  /** How often waitForTransaction asks, in ms: 2000 (Concordium makes a block about every 2 seconds). */
+  get defaultWaitInterval(): number;
   toReadOnlyAccount(): Promise<WalletAccountReadOnly>;
   dispose(): void;
 
@@ -140,6 +266,26 @@ export class WalletAccountConcordium extends WalletAccountReadOnly implements IW
   quoteTransfer(options: TransferOptions): Promise<FeeQuote>;
   /** Resolve a CIS-2 token's off-chain metadata (name/symbol/decimals) via its URL. */
   getCis2Metadata(tokenAddress: string): Promise<Cis2Metadata>;
+
+  // ---- token rules (regulated tokens) ----
+  /**
+   * A token's rules as the chain holds them now: paused? an allow list? a deny list? (CIS-2: all null).
+   * @throws {InvalidTokenError} If there is no such PLT on this network.
+   */
+  getTokenRules(tokenAddress: string): Promise<TokenRules>;
+  /**
+   * An account's standing with a token: on chain? its balance; on the allow list? on the deny list?
+   * @param address The account (Base58); default: this account.
+   * @throws {InvalidTokenError} If there is no such PLT on this network.
+   */
+  getTokenAccountStatus(tokenAddress: string, address?: string): Promise<TokenAccountStatus>;
+  /**
+   * Check a token transfer before sending: every reason it would be refused (the token, this account, the recipient,
+   * the fee and who pays it), with nothing sent. CIS-2: a dry run shows whether the contract would refuse.
+   * @throws {InvalidTokenError} If there is no such PLT on this network.
+   * @throws {ValueError} If the recipient (or the sponsor) is not an account address.
+   */
+  checkTransfer(options: CheckTransferOptions): Promise<TransferCheck>;
 
   // ---- sponsored transactions (Concordium extension) ----
   /** SENDER builds the unsigned sponsorable PLT transfer (sets sender metadata + sponsor). */

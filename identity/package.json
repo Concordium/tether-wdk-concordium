@@ -1,0 +1,79 @@
+{
+  "name": "@concordium/wdk-identity-concordium",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Concordium identity companion for the WDK wallet module: identity verification with an identity provider, the identity exported as text for the wallet to keep in its own secure storage, account creation and recovery from a wallet seed, and proving facts to websites.",
+  "type": "module",
+  "main": "index.js",
+  "types": "types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./types/index.d.ts",
+      "default": "./index.js"
+    },
+    "./node": {
+      "types": "./types/node.d.ts",
+      "default": "./node-extras.js"
+    },
+    "./verify": {
+      "types": "./types/verify.d.ts",
+      "default": "./verify.js"
+    }
+  },
+  "files": [
+    "index.js",
+    "node-extras.js",
+    "verify.js",
+    "docs",
+    "src",
+    "types",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node scripts/run-tests.mjs test/unit",
+    "test:integration": "node scripts/run-tests.mjs test/integration",
+    "fixtures": "node test/fixtures/capture.mjs",
+    "check:providers": "node scripts/check-providers.mjs",
+    "example:verify-identity": "node examples/terminal-and-browser/verify-identity.mjs",
+    "example:load-identity": "node examples/terminal/load-identity.mjs",
+    "example:create-account": "node examples/terminal/create-account.mjs",
+    "example:wdk-end-to-end": "node examples/terminal/wdk-end-to-end.mjs",
+    "example:recover-identity": "node examples/terminal/recover-identity.mjs",
+    "example:resume-after-restart": "node examples/terminal-and-browser/resume-after-restart.mjs",
+    "example:server-keeps-identities": "node examples/terminal/server-keeps-identities.mjs",
+    "example:handle-errors": "node examples/terminal/handle-errors.mjs",
+    "example:age-check": "node examples/terminal/age-check.mjs",
+    "example:company-providers": "node examples/company-identity/list-business-id-providers.mjs",
+    "example:company-verify": "node examples/company-identity/verify-company-identity.mjs",
+    "example:company-questions": "node examples/company-identity/company-questions.mjs",
+    "identity-walkthrough": "node examples/identity-walkthrough/server.mjs"
+  },
+  "keywords": [
+    "wdk",
+    "wallet",
+    "concordium",
+    "identity",
+    "tether"
+  ],
+  "author": "Concordium",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Concordium/tether-wdk-concordium.git",
+    "directory": "identity"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "@concordium/wdk-wallet-concordium": "file:..",
+    "typescript": "5.9.3"
+  },
+  "dependencies": {
+    "@concordium/rust-bindings": "4.0.1",
+    "@concordium/web-sdk": "12.0.2",
+    "@noble/hashes": "1.8.0"
+  }
+}

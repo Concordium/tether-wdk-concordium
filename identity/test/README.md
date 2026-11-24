@@ -1,0 +1,64 @@
+# The identity package's tests
+
+The tests are grouped by the steps of the story, in order: set up, find a provider, verify an identity, keep it,
+create accounts, get everything back on a new phone, prove facts, and the demo. Each test file starts with what it
+tests and, where several parties take part (a wallet, a shop, a provider, the chain), a "who is who" list and a
+numbered diagram; each test says which steps it covers.
+
+```bash
+npm test                          # unit tests: offline, no network
+npm run test:integration          # live tests on testnet: read-only
+WRITE=1 npm run test:integration  # also those that write to testnet (an account, an anchored question): see each file
+```
+
+## Unit tests (`unit/`): offline
+
+The network is replaced by data recorded from testnet and mainnet once (`fixtures/`, see `fixtures/capture.mjs`), and
+the chain by a pretend node (`helpers.mjs`).
+
+| Folder | File | What it tests |
+| --- | --- | --- |
+| `1-setup` | `package` | the package itself: its entry point, published files, and alignment with the wallet package |
+| | `config` | the configuration: key derivation, the provider list, the node connection |
+| | `types` | the published type declarations accept Concordium's real node clients |
+| | `cryptography-plug-in` | the cryptography plug-in point: a whole journey through a native-like plug-in; some steps only; a phone plug-in without the proof check |
+| | `number-ranges` | provider, identity and account numbers within Concordium's ranges |
+| | `seed-and-keys` | the seed phrase and the keys worked out from it |
+| | `dispose` | wiping the seed and the identities held |
+| | `node-connection` | the wallet's node connection: parameters, account lookups, sending, following a transaction |
+| `2-providers` | `provider-list` | the identity providers, from the list the wallet passes in; company (Business ID) providers |
+| | `provider-list-checked-against-chain` | the list's keys checked against the chain's record: a changed or unregistered provider refused |
+| | `recorded-provider-data` | the recorded provider lists and parameters have the shape the package reads |
+| | `provider-check-script` | `npm run check:providers`: how each kind of provider answer is reported |
+| `3-verify-identity` | `identity-request` | building the identity request a provider verifies |
+| | `polling-and-link` | waiting for the provider, and the link a person opens |
+| | `callback` | reading the provider's reply from the return address |
+| | `callback-listener` | the built-in listener (Node.js desktop apps) |
+| | `genuine-identity` | only genuine identities are held: a changed or forged one is refused when collected, recovered or imported |
+| | `collecting-the-identity` | collecting the issued identity, and checking it is this seed's |
+| `4-keep-identity` | `export-and-import` | the identity as plain text the wallet keeps (NOT encrypted), and taking it back after checking it is this wallet's |
+| | `storage-format-spec` | `docs/storage-format.md` is exact: a reader written from the document alone |
+| `5-accounts` | `credential` | building and signing the credential that creates an account |
+| | `sending-to-the-chain` | sending it to the node, and every way that can end |
+| | `account-creation` | creating an account from the identity: the checks first, "already exists", the result |
+| `6-recovery` | `recovery` | a new phone: the identities back from the providers, their accounts from the chain |
+| `7-proofs` | `questions` | a website's question: building it, reading it, the consent wording |
+| | `wallet-proves-from-account` | the wallet answers from one of the identity's accounts, after checking the anchor |
+| | `wallet-proves-from-identity` | the wallet answers from the identity itself, after checking the anchor |
+| | `website-asks-and-checks` | the website asks a question (anchored, optionally sponsored) and checks the answer, from the identity or an account |
+| `8-demo` | `identity-walkthrough` | the identity walkthrough's local server and its steps |
+
+## Live tests (`integration/`): on testnet
+
+| Folder | File | What it tests |
+| --- | --- | --- |
+| `2-providers` | `provider-accepts-request` | Concordium's testnet provider and Global FinReg (Business ID) accept our requests |
+| | `provider-list-matches-chain` | the published testnet and mainnet lists match their chains |
+| | `company-identity-samples` | the company (Business ID) samples: the providers, the company page opening, company questions |
+| `5-accounts` | `create-real-account` | **WRITE=1**: a real account created through the node |
+| `3-verify-identity` | `resume-after-restart-sample` | the resume sample, part 2: a fresh start collects the identity from the saved reply |
+| `4-keep-identity` | `server-keeps-identities-sample` | the server sample: one record per user, readable only with that user's seed phrase |
+| `6-recovery` | `recover-identity` | the recorded identity comes back from the testnet provider |
+| `7-proofs` | `round-trip` | a question recorded on chain once, answered from the identity and checked (**WRITE=1**: a fresh one, and one answered from an account) |
+| | `age-check-sample` | **WRITE=1**: the age-check sample, run as a person would |
+| `9-errors` | `handle-errors-sample` | the errors sample: every error with its name and reason, refused before anything is sent |

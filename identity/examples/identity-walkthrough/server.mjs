@@ -1,0 +1,188 @@
+/**
+ * The identity walkthrough: a small local web server that tells the whole story in the browser, one click per step.
+ * The page (public/) is only the screen; this server does the work with the two packages, as the samples do.
+ *
+ *   npm run identity-walkthrough          (from the identity folder; opens the page in the default browser)
+ *
+ * Safety: it listens on 127.0.0.1 only and checks the Host header, so other machines (and DNS tricks) cannot
+ * reach it; every /api call needs a random token that only the real page has, sent as a custom header, which
+ * pages from other sites cannot add, so they cannot drive the demo. The seeds never reach the browser.
+ */
+import { createServer } from 'node:http';
+import { readFile } from 'node:fs/promises';
+import { randomBytes } from 'node:crypto';
+import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import { readSettings } from './settings.mjs';
+import DemoFlow, { VERIFY_STAGES } from './flow.mjs';
+import { CONCORDIUM_TESTNET_IDENTITY_CONFIG } from '@concordium/wdk-identity-concordium';
+import { ConcordiumGRPCNodeClient, credentials } from '@concordium/web-sdk/nodejs';
+
+const PUBLIC = new URL('./public/', import.meta.url);
+const STATIC_FILES = {
+  '/': { file: 'index.html', type: 'text/html; charset=utf-8' },
+  '/app.js': { file: 'app.js', type: 'text/javascript; charset=utf-8' },
+  '/story.js': { file: 'story.js', type: 'text/javascript; charset=utf-8' },
+  '/style.css': { file: 'style.css', type: 'text/css; charset=utf-8' },
+  // Where the identity provider sends the browser back to (it hands the reply to /api/callback).
+  '/return': { file: 'return.html', type: 'text/html; charset=utf-8' },
+  '/return.js': { file: 'return.js', type: 'text/javascript; charset=utf-8' },
+};
+const PAGE_HEADERS = {
+  'Content-Security-Policy': "default-src 'self'; img-src 'self' data: https:; frame-ancestors 'none'; base-uri 'none'",
+  'X-Content-Type-Options': 'nosniff',
+  'Referrer-Policy': 'no-referrer',
+  'Cache-Control': 'no-store',
+};
+const MAX_BODY_BYTES = 64 * 1024;
+
+/**
+ * Start the demo server.
+ * @param {object} [options]
+ * @param {ReturnType<typeof readSettings>} [options.settings]  defaults to the environment's
+ * @param {number} [options.port]  overrides settings.port (0: any free port, for tests)
+ * @param {typeof fetch} [options.fetch]  HTTP for the packages (tests pass a fake)
+ * @param {object} [options.node]  the connection to a Concordium node (default: Concordium's public testnet node;
+ *   tests pass a pretend one)
+ * @param {boolean} [options.checkProviders]  run the live "online" check of the providers (default true)
+ * @param {(seed: string) => object} [options.makeWallet]  the wallet package's manager for a seed (tests pass a fake)
+ * @param {number} [options.pauseMs]  waits between checks of the chain (tests make it short)
+ * @returns {Promise<{ url: string, token: string, state: object, close: () => Promise<void> }>}
+ */
+export async function startDemoServer({ settings = readSettings(), port = settings.port, fetch: fetchFn, node, checkProviders, makeWallet, pauseMs } = {}) {
+  const token = randomBytes(16).toString('hex');
+  // Everything the page draws. It holds no secrets: no seeds, no keys.
+  const state = {
+    network: 'testnet',
+    funding: settings.funding ? 'funding account' : 'none',
+    identityIndex: settings.identityIndex,
+    reuseIdentity: settings.reuseIdentity,
+    step: 'start',
+    verifyStages: VERIFY_STAGES,
+  };
+  // The identity provider list: the package does not fetch it, so the wallet (this demo) does, once at start, and
+  // passes it in. Today it comes from the wallet-proxy's /v2/ip_info (every provider, including the company (Business ID)
+  // ones); only its shape matters.
+  const listResponse = await (fetchFn ?? fetch)('https://wallet-proxy.testnet.concordium.com/v2/ip_info');
+  if (!listResponse.ok) throw new Error(`The wallet-proxy answered HTTP ${listResponse.status} for the identity provider list.`);
+  const identityProviders = await listResponse.json();
+  const flow = new DemoFlow({
+    settings, state, checkProviders, identityProviders,
+    // The wallet's own connection to a Concordium node (the identity package never opens one).
+    node: node ?? new ConcordiumGRPCNodeClient('grpc.testnet.concordium.com', 20000, credentials.createSsl()),
+    ...(fetchFn ? { fetch: fetchFn } : {}), ...(makeWallet ? { makeWallet } : {}), ...(pauseMs ? { pauseMs } : {}),
+  });
+  let host; // "127.0.0.1:<port>", known once listening
+
+  const server = createServer(async (request, response) => {
+    try {
+      // Only our own address: other machines and DNS tricks are refused.
+      if (request.headers.host !== host && request.headers.host !== host.replace('127.0.0.1', 'localhost')) {
+        return send(response, 403, { error: 'This demo only answers on its own local address.' });
+      }
+      const { pathname } = new URL(request.url, `http://${host}`);
+      if (pathname.startsWith('/api/')) {
+        if (request.headers['x-demo-token'] !== token) return send(response, 403, { error: 'Missing or wrong demo token.' });
+        return await api(request, response, pathname);
+      }
+      const page = STATIC_FILES[pathname];
+      if (!page || request.method !== 'GET') return send(response, 404, { error: 'Not found.' });
+      let body = await readFile(new URL(page.file, PUBLIC), 'utf8');
+      if (page.file.endsWith('.html')) body = body.replace('__DEMO_TOKEN__', token);
+      response.writeHead(200, { 'Content-Type': page.type, ...PAGE_HEADERS });
+      response.end(body);
+    } catch (e) {
+      send(response, 500, { error: e.message });
+    }
+  });
+
+  /** The JSON API the page calls: the state, and one route per step. */
+  async function api(request, response, pathname) {
+    if (request.method === 'GET' && pathname === '/api/state') return send(response, 200, state);
+    if (request.method !== 'POST') return send(response, 404, { error: 'Not found.' });
+    const body = await readJson(request);
+    try {
+      switch (pathname) {
+        case '/api/start': await flow.start(); return send(response, 200, state);
+        case '/api/verify': return send(response, 200, await flow.verify(Number(body.providerIndex)));
+        case '/api/callback': flow.callback(String(body.url ?? '')); return send(response, 202, { ok: true });
+        case '/api/create-account': flow.createAccount(); return send(response, 202, { ok: true });
+        case '/api/receive': flow.receive(); return send(response, 202, { ok: true });
+        case '/api/quote': return send(response, 200, await flow.quote(body));
+        case '/api/send': flow.send(body); return send(response, 202, { ok: true });
+        case '/api/sponsored': flow.sponsored(); return send(response, 202, { ok: true });
+        case '/api/storage': await flow.storage({ action: String(body.action ?? ''), kind: body.kind }); return send(response, 200, state);
+        case '/api/reset': await flow.reset(); return send(response, 200, state);
+        default: return send(response, 404, { error: 'Not found.' });
+      }
+    } catch (e) {
+      state.error = e.message;
+      return send(response, 400, { error: e.message });
+    }
+  }
+
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(port, '127.0.0.1', resolve);
+  });
+  host = `127.0.0.1:${server.address().port}`;
+  flow.setReturnUrl(`http://${host}/return`);
+  return {
+    url: `http://${host}/`,
+    token,
+    state,
+    close: () => new Promise((resolve) => { flow.dispose(); server.close(() => resolve()); }),
+  };
+}
+
+/** A JSON answer. */
+function send(response, status, body) {
+  response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', ...PAGE_HEADERS });
+  response.end(JSON.stringify(body));
+}
+
+/** Read a small JSON request body (used by the steps' POST routes). */
+export function readJson(request) {
+  return new Promise((resolve, reject) => {
+    let body = '';
+    request.setEncoding('utf8');
+    request.on('data', (chunk) => {
+      body += chunk;
+      if (Buffer.byteLength(body) > MAX_BODY_BYTES) request.destroy(new Error('Request too large.'));
+    });
+    request.on('end', () => {
+      try { resolve(body ? JSON.parse(body) : {}); } catch { reject(new Error('The request is not valid JSON.')); }
+    });
+    request.on('error', reject);
+  });
+}
+
+/** Open a URL in the default browser: Windows, macOS or Linux. The address is printed as well, in case it does not open. */
+function openBrowser(url) {
+  const [command, args] = process.platform === 'win32' ? ['cmd', ['/c', 'start', '""', url]]
+    : process.platform === 'darwin' ? ['open', [url]] : ['xdg-open', [url]];
+  try {
+    spawn(command, args, { detached: true, stdio: 'ignore', windowsHide: true }).on('error', () => {}).unref();
+  } catch { /* the printed address is enough */ }
+}
+
+// ---- Run directly: npm run identity-walkthrough ----------------------------------------------------------------------
+
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  const settings = readSettings();
+  try {
+    const demo = await startDemoServer({ settings });
+    console.log('Concordium identity walkthrough (testnet, public test seed)');
+    console.log(`  open: ${demo.url}`);
+    console.log(`  funding: ${settings.funding ? 'a funding account is configured' : 'none (receive and send steps will ask for testnet CCD)'}`);
+    console.log('  stop: Ctrl+C');
+    openBrowser(demo.url);
+  } catch (e) {
+    if (e.code === 'EADDRINUSE') {
+      console.error(`Port ${settings.port} is already in use. Choose another, e.g. PORT=4322 (macOS / Linux) or $env:PORT=4322 (PowerShell).`);
+    } else {
+      console.error(`Could not start the identity walkthrough: ${e.message}`);
+    }
+    process.exitCode = 1;
+  }
+}

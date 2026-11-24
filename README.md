@@ -6,11 +6,20 @@ Derive account keys, read balances, sign messages, transfer CCD and tokens, and 
 > **Beta:** This package is currently in beta.
 > Test thoroughly in development environments before using it in production.
 
+**Identities and new accounts:** the companion package [`@concordium/wdk-identity-concordium`](identity/README.md),
+in this repository, verifies a user's identity with an identity provider, creates Concordium accounts from it,
+gets both back from the seed phrase, and proves facts to websites. Start with the
+[integration guide](docs/integration-guide.md); the [threat model](docs/threat-model.md) says what the packages
+protect against.
+
 ## Features
 
 - Seed-based account key derivation using `ConcordiumHdWallet`.
 - Native CCD balances, transfers, and fee quotes.
 - Protocol-level token (PLT) and CIS-2 token balances, transfers, and fee quotes.
+- Regulated tokens: a token's rules (paused, allow list, deny list) and an account's standing with it, a check of a
+  transfer before sending it (every reason it would be refused), and transfer errors that say why.
+- Transaction status as WDK's standard receipt, so WDK's `waitForTransaction` works.
 - Sponsored PLT transactions with separate sender and sponsor signing.
 - Message signing and verification.
 - Account recovery through node credential-ID lookup.
@@ -200,6 +209,93 @@ if (metadata) console.log(metadata.name, metadata.symbol, metadata.decimals)
 `getCis2Metadata` returns `metadata: null` if the off-chain metadata document
 cannot be retrieved. `manager.listTokens()` lists PLT identifiers from the node.
 
+### Regulated tokens
+
+Some PLTs restrict who may hold or move them: an **allow list** (only accounts on it may send or receive), a
+**deny list** (accounts on it may not), and a **pause** (no transfers at all). The token's issuer manages these
+rules through its governance account; a wallet reads them, so it can tell the user before offering a transfer,
+rather than after it fails.
+
+```js
+const rules = await account.getTokenRules('UPEU')
+// → { kind: 'plt', token: 'UPEU', name: 'Upwood Test Euro', paused: false, allowList: true, denyList: true,
+//     governanceAccount: '4fWT…', decimals: 6, … }
+const standing = await account.getTokenAccountStatus('UPEU', recipientAddress)  // default: this account
+// → { exists: true, balance: 0n, onAllowList: false, onDenyList: false }       (null: the token keeps no such list)
+
+const check = await account.checkTransfer({ token: 'UPEU', recipient: recipientAddress, amount: 1000000n })
+// → { ok: false, fee: 4661487n, reasons: [
+//      { reason: 'INSUFFICIENT_TOKEN_BALANCE', message: 'This account holds 0 UPEU; 1 is needed.', account: '3GEm…' },
+//      { reason: 'SENDER_NOT_ON_ALLOW_LIST', message: "This account is not on UPEU's allow list.", account: '3GEm…' } ] }
+```
+
+`checkTransfer` sends nothing and charges nothing. It lists **every** reason the transfer would be refused: the
+amount, a paused token, this account and the recipient (on chain? on the deny list? not on the allow list?), this
+account's balance, and whether the account that pays the fee (this one, or `sponsorAddress` for a sponsored transfer)
+holds enough CCD. It applies the same rules as the SDK's `plt.Token.validateTransfer`, which stops at the first
+problem (a test checks the two agree). A CIS-2 token has no standard rules (its rules read as `null`): for it,
+`checkTransfer` checks the accounts and the balance, and dry-runs the transfer to see whether the token's contract
+would refuse it.
+
+`transfer` and `buildSponsorableTransfer` run the same check first, so a transfer that cannot happen is never sent:
+
+```js
+import { ConcordiumTransferError } from '@concordium/wdk-wallet-concordium'
+
+try {
+  await account.transfer({ token: 'UPEU', recipient: recipientAddress, amount: 1000000n })
+} catch (e) {
+  if (e instanceof ConcordiumTransferError) {     // WDK's TransferError, with Concordium's reasons
+    e.reason    // the first problem, e.g. 'RECIPIENT_NOT_ON_ALLOW_LIST'
+    e.reasons   // every problem: { reason, message, account }
+    e.hash      // null: nothing was sent. Set only if the chain refused it after all (then the fee was charged)
+  }
+}
+```
+
+The rules can change between the check and the transfer (the issuer pauses the token, or changes a list): the SDK's
+own last check, or the chain, then refuses it, and the error says why in the same reasons. When the chain says only
+that the token "does not permit" it, the reason is worked out from the token's rules as they are then; if they no
+longer say why, it is `OPERATION_NOT_PERMITTED`, with the chain's own words.
+
+| `reason` (`ConcordiumTransferErrorReason`) | Meaning |
+| --- | --- |
+| `INSUFFICIENT_BALANCE` | the account that pays the fee (this one, or the sponsor) holds too little CCD (WDK's own) |
+| `INSUFFICIENT_TOKEN_BALANCE` | this account holds too little of the token (WDK's own) |
+| `INVALID_AMOUNT` | the amount is not a whole number of base units above 0 |
+| `TOKEN_PAUSED` | the token is paused: no transfers until its issuer resumes it |
+| `SENDER_NOT_FOUND`, `RECIPIENT_NOT_FOUND`, `SPONSOR_NOT_FOUND` | no account at that address |
+| `SENDER_NOT_ON_ALLOW_LIST`, `RECIPIENT_NOT_ON_ALLOW_LIST` | the token keeps an allow list, and the account is not on it |
+| `SENDER_ON_DENY_LIST`, `RECIPIENT_ON_DENY_LIST` | the account is on the token's deny list |
+| `CONTRACT_REFUSED` | a CIS-2 token's contract refuses it (its own rules; the standard CIS-2 refusals are put in words) |
+| `OPERATION_NOT_PERMITTED` | only after sending: the token refused it, and its rules now do not say why |
+| `REJECTED` | only after sending: the chain refused it for another reason (`rejectReason` has it) |
+
+Native CCD transfers (`sendTransaction`) with too little CCD for the amount and the fee throw WDK's
+`TransactionError` with reason `INSUFFICIENT_BALANCE`, before sending.
+
+### Transaction status
+
+`getTransaction(hash)` returns WDK's standard receipt, the same for every chain, so WDK's own `waitForTransaction`
+works:
+
+```js
+const receipt = await account.waitForTransaction(hash)        // asks every 2 seconds, for up to 60 seconds
+// → { hash, finality: 'final', success: true, fee: 3792510n, block: 50504314, blockHash: 'ae8a…' }
+```
+
+| The node says | `finality` | Also |
+| --- | --- | --- |
+| received; or committed (in a block, not final yet) | `'pending'` | |
+| finalized | `'final'` | `success` (false if rejected; the fee is still charged), `fee` (for a sponsored transaction, what the sponsor paid), `block` (its height), `blockHash` |
+| not known | throws WDK's `NoSuchElementError` | `waitForTransaction` keeps asking |
+| cannot be asked | throws WDK's `ProviderError` | `waitForTransaction` tries again, up to 3 times in a row |
+
+Concordium blocks are final within seconds, so WDK's `'confirmed'` (reversible only in extreme conditions) is not
+used: a committed transaction stays `'pending'` until it is final. Concordium also has no `'dropped'`: a transaction
+that never reaches a block (it expired) stops being known, and `waitForTransaction` ends with WDK's `TimeoutError`.
+`getTransactionReceipt(hash)` still returns the node's own status.
+
 ### Sign and verify messages
 
 ```js
@@ -272,10 +368,15 @@ JSON as opaque. Sponsored transfers support PLTs, not CIS-2 tokens.
 
 ## Account creation
 
-Concordium accounts require an identity and an on-chain credential deployment.
-This package works with existing accounts; deriving keys does not create an
-account. Integrate production onboarding at the host-application layer, then use
-the account's derivation path and account recovery API to locate the resulting account.
+Concordium accounts require an identity and an on-chain credential deployment, so
+deriving keys does not create an account. This package works with accounts that exist.
+To create them, use the companion package
+[`@concordium/wdk-identity-concordium`](identity/README.md#creating-accounts) in this
+repository: it verifies the user's identity with an identity provider and creates
+accounts from it, without the Concordium ID App (see the
+[integration guide, chapters 3 to 5](docs/integration-guide.md#3-verify-an-identity)).
+The new account is then used through this package with `getAccountByPath()`, using
+the path the identity package returns.
 
 ## API and limitations
 
@@ -284,21 +385,32 @@ See [`types/index.d.ts`](types/index.d.ts) for request, result, and option types
 | API | Notes |
 | --- | --- |
 | `account.getBalanceForAddress(address)` | Reads any account's CCD balance without deriving its keys. |
-| `account.getTransactionReceipt(hash)` | Returns the native node status, or `null` when unavailable. |
+| `account.getTransactionReceipt(hash)` | Returns the native node status, or `null` when unavailable. WDK's `getTransaction` is preferred. |
+| `account.getTokenRules(token)` / `getTokenAccountStatus(token, address?)` | A token's rules, and an account's standing with it. See [Regulated tokens](#regulated-tokens). |
+| `account.checkTransfer(transfer)` | Every reason a token transfer would be refused, with nothing sent. |
+| `account.getTransaction(hash)` / `waitForTransaction(hash)` | WDK's standard receipt. See [Transaction status](#transaction-status). |
 | `account.keyPair` | Exposes public and private key bytes; treat the private key as secret. |
 | `manager.dispose()` | Disposes tracked accounts and clears the manager's seed. |
 | `getAccount()` | Unsupported; use `getAccountByPath()` with all three identity coordinates. |
 | `getFeeRates()` | Unsupported; use the transaction-specific quote methods. |
 | Named signers | Unsupported; use seed-based accounts. |
-| `getTransaction()` / `waitForTransaction()` | Unsupported; use `getTransactionReceipt()`. |
 | `toReadOnlyAccount()` | Returns the same account instance, **not** a signing-isolated view. |
 
 `getAccountByPath()` throws `AccountNotCreatedError` when the credential is not
 on-chain. Address-based balance reads also use this error for a missing account,
-with `error.address` set. Submission methods throw
-`TransactionRejectedError` when a transaction finalizes with a rejected outcome;
-its `hash` and `rejectReason` identify the failure. A rejected transaction can
-still incur a fee.
+with `error.address` set.
+
+Token transfers (`transfer`, `buildSponsorableTransfer`, `submitSponsored`) that
+cannot happen throw `ConcordiumTransferError`, which extends WDK's `TransferError`:
+`reason` is the first problem (a `ConcordiumTransferErrorReason` value, e.g.
+`TOKEN_PAUSED` or `RECIPIENT_NOT_ON_ALLOW_LIST`) and `reasons` lists every
+problem found. They are checked first, as `checkTransfer` checks them, so nothing
+is sent; if the chain refuses a transfer after all (a rule changed in the moment
+between), the error has the transaction's `hash` and the chain's `rejectReason`,
+and the fee was still charged. Native CCD transfers (`sendTransaction`) with too
+little CCD throw WDK's `TransactionError` with reason `INSUFFICIENT_BALANCE`. Other
+transactions that finalize rejected throw `TransactionRejectedError`, with its
+`hash` and `rejectReason`; a rejected transaction can still incur a fee.
 
 ## Security
 
@@ -320,10 +432,11 @@ npm run example:verify     # Message signing and verification
 npm run example:send       # CCD transfer
 npm run example:token      # Token balances, quotes, and transfers
 npm run example:sponsored  # Sponsored transfers
+npm run example:regulated-token  # A regulated token: its rules, a blocked transfer, a receipt (read-only)
 ```
 
 Inspect each script's configuration before running it. Transfer examples submit
-transactions; they are not read-only demonstrations.
+transactions; they are not read-only demonstrations (the regulated-token example is: it sends nothing).
 Examples are not included in the npm package.
 
 ## Development and testing
